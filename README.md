@@ -25,7 +25,7 @@ For each script, `output/YYYY-MM-DD_<name>/` contains:
 ## Requirements
 
 - macOS (the installer uses Homebrew; Apple silicon or Intel)
-- Python 3.11+
+- Python 3.11–3.13 (the installer picks one, or installs 3.12 with Homebrew)
 - [Claude Code](https://claude.com/claude-code), logged in. The storyboard, the English adaptation and the publish
   notes are written through the local `claude` command line, so no API key is needed.
 - About 3 GB of disk for the Kokoro voices and the Whisper model

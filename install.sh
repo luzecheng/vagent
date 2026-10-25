@@ -12,8 +12,22 @@ command -v ffmpeg >/dev/null || brew install ffmpeg
 brew list --cask font-inter >/dev/null 2>&1 || brew install --cask font-inter
 brew list --cask font-noto-sans-cjk-sc >/dev/null 2>&1 || brew install --cask font-noto-sans-cjk-sc
 
-PY=${PYTHON:-python3}
-"$PY" -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
+# Python 3.11-3.13: spaCy (needed by the English phonemizer) has no build for newer versions yet
+supported() { "$1" -c 'import sys; sys.exit(not (3, 11) <= sys.version_info[:2] <= (3, 13))' 2>/dev/null; }
+PY=""
+for candidate in ${PYTHON:-} python3.12 python3.11 python3.13 python3; do
+  if command -v "$candidate" >/dev/null && supported "$candidate"; then PY=$candidate; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "No Python 3.11-3.13 found; installing python@3.12 with Homebrew"
+  brew install python@3.12
+  PY="$(brew --prefix python@3.12)/bin/python3.12"
+fi
+echo "Using $("$PY" --version) ($(command -v "$PY"))"
+if [ -d .venv ] && ! supported .venv/bin/python; then
+  echo "Recreating .venv: it was built with an unsupported Python"
+  rm -rf .venv
+fi
 [ -d .venv ] || "$PY" -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -e ".[asr,test]" zhconv

@@ -7,7 +7,7 @@
 ## 需要什么
 
 - macOS（安装脚本用 Homebrew；Apple 芯片或 Intel 均可）
-- Python 3.11 及以上
+- Python 3.11–3.13（安装脚本会自动挑选，没有就用 Homebrew 装 3.12）
 - 已登录的 [Claude Code](https://claude.com/claude-code)（分镜、英文改写、发布文案都通过它完成，不需要 API key）
 - 约 3 GB 硬盘空间（Kokoro 配音模型、Whisper 回听模型）
 
