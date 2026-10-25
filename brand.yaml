@@ -1,0 +1,23 @@
+# Brand configuration (edit freely).
+colors:
+  background: "#0E1116"
+  surface: "#171B22"
+  text: "#F2F4F7"
+  muted: "#8A93A3"
+  accent: "#E8B547"      # gold: primary emphasis
+  positive: "#3CC8C0"    # teal
+  negative: "#FF6F61"    # coral
+fonts:
+  en: Inter
+  zh: Noto Sans CJK SC
+account:
+  watermark: ""          # e.g. "@yourhandle"; empty = none
+disclaimer:
+  zh: 仅为个人观点，不构成投资建议
+  en: Not financial advice.
+voices:
+  zh: zm_010             # Kokoro voice; a CosyVoice choice goes in config/local.yaml
+  en: am_michael
+duration:
+  target_min_s: 60
+  target_max_s: 120

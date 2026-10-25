@@ -1,0 +1,6 @@
+# Chinese pronunciation fixes for the Kokoro zh voice.
+# phrase: pinyin with tone numbers (1-4, 5 = neutral), one syllable per character.
+# Write the dictionary reading; tone sandhi (e.g. 3-3 -> 2-3) is applied automatically.
+# Tip: phrases flagged in build/asr_check.md are good candidates.
+守住: shou3 zhu4
+得守住: dei3 shou3 zhu4

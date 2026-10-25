@@ -1,0 +1,16 @@
+.venv/
+.cache/
+models/
+engines/cosyvoice/
+output/
+inbox/
+.env
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+# personal: this machine's settings, your own scripts, backups
+config/local.yaml
+scripts/
+*.bak_*
+engines/*.log

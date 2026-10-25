@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vagent"
+version = "0.1.0"
+description = "Daily short-video agent: one Chinese script in, Chinese + English vertical videos out"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = ["kokoro-onnx", "misaki[zh,en]", "soundfile", "numpy", "scipy", "pillow", "pyyaml",
+                "pydantic>=2", "jieba"]
+
+[project.optional-dependencies]
+asr = ["faster-whisper"]
+test = ["pytest"]
+
+[project.scripts]
+vagent = "vagent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

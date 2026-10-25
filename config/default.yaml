@@ -1,0 +1,37 @@
+# Defaults. Overridden by brand.yaml, then by command-line flags.
+duration:
+  target_min_s: 60
+  target_max_s: 120
+  hard_cap_s: 140          # X non-Premium upload limit is 2:20
+  allow_long: false        # --allow-long: render past hard_cap_s instead of pausing
+  max_speedup: 1.1         # never speed narration up beyond this
+audio:
+  music: false             # background music under the voice-over (true = synthesized, ducked music bed)
+video:
+  width: 1080
+  height: 1920
+  fps: 30
+  landscape_16x9: false
+  cover_intro_s: 0.5       # the video opens on its cover this long (first frame = platform thumbnail); 0 = off
+tts:
+  zh: {provider: kokoro, model: v1.1-zh, voice: zm_010, speed: 1.0}
+  # heavier, optional (./install.sh --with-cosyvoice; CPU only, ~10 min per 2-min narration):
+  # {provider: cosyvoice, model: cosyvoice-300m-sft, voice: "sft:中文男", speed: 1.0}
+  # put machine-specific choices like this in config/local.yaml (git-ignored)
+  en: {provider: kokoro, model: v1.0, voice: am_michael, speed: 1.0}
+  pause_s: {sentence: 0.38, question: 0.5, colon: 0.3, paragraph: 0.7}
+  # measured speaking rates, used to estimate duration before synthesis
+  rate: {zh_chars_per_s: 4.5, en_words_per_s: 2.6}
+subtitles:
+  zh: {max_chars_per_line: 13, max_lines: 2}
+  en: {max_chars_per_line: 32, max_lines: 2}
+llm:
+  provider: claude_cli       # uses the logged-in Claude Code CLI; no API key needed
+  model: sonnet
+  timeout_s: 180
+  retries: 3
+paths:
+  models: models
+  cache: .cache
+  output: output
+  inbox: inbox
