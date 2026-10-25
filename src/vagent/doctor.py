@@ -23,6 +23,13 @@ def _font(name: str) -> str | None:
     return None
 
 
+ESPEAK_MAX_PATH = 150  # espeak-ng stores its data path in a 160-byte buffer and appends file names to it
+
+
+def espeak_path_ok(data_path: str) -> bool:
+    return len(data_path.encode("utf-8")) <= ESPEAK_MAX_PATH
+
+
 def check(config: dict) -> int:
     rows = []
 
@@ -58,6 +65,15 @@ def check(config: dict) -> int:
         item(True, "faster-whisper (ASR check)", "installed")
     except ImportError:
         item(False, "faster-whisper (ASR check)", "missing", ".venv/bin/pip install faster-whisper")
+    try:
+        import espeakng_loader
+
+        data = espeakng_loader.get_data_path()
+        item(espeak_path_ok(data), "espeak-ng data path (English voice)",
+             f"{len(data)} characters" if espeak_path_ok(data) else f"{len(data)} characters, longer than espeak-ng accepts",
+             f"move the vagent folder somewhere shorter (e.g. ~/vagent) and rerun ./install.sh")
+    except ImportError:
+        item(False, "espeak-ng (English voice)", "missing", "./install.sh")
     inbox = Path(config["paths"]["inbox"])
     item(inbox.is_dir() and os.access(inbox, os.W_OK), "inbox folder", str(inbox), f"mkdir -p {inbox}")
     skill = Path.home() / ".claude/skills/make-video/SKILL.md"

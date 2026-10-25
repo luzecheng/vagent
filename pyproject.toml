@@ -8,8 +8,9 @@ version = "0.1.0"
 description = "Daily short-video agent: one Chinese script in, Chinese + English vertical videos out"
 license = {text = "MIT"}
 requires-python = ">=3.11,<3.14"
-dependencies = ["kokoro-onnx", "misaki[zh,en]", "soundfile", "numpy", "scipy", "pillow", "pyyaml",
-                "pydantic>=2", "jieba"]
+# misaki: Chinese phonemes only (English goes through kokoro-onnx's espeak-ng), so no spaCy
+dependencies = ["kokoro-onnx", "misaki[zh]", "soundfile", "numpy", "scipy", "pillow", "pyyaml", "pydantic>=2",
+                "jieba", "pypinyin", "cn2an", "zhconv", "fonttools"]
 
 [project.optional-dependencies]
 asr = ["faster-whisper"]

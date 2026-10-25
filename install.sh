@@ -12,7 +12,7 @@ command -v ffmpeg >/dev/null || brew install ffmpeg
 brew list --cask font-inter >/dev/null 2>&1 || brew install --cask font-inter
 brew list --cask font-noto-sans-cjk-sc >/dev/null 2>&1 || brew install --cask font-noto-sans-cjk-sc
 
-# Python 3.11-3.13: spaCy (needed by the English phonemizer) has no build for newer versions yet
+# Python 3.11-3.13: the versions vagent is tested on
 supported() { "$1" -c 'import sys; sys.exit(not (3, 11) <= sys.version_info[:2] <= (3, 13))' 2>/dev/null; }
 PY=""
 for candidate in ${PYTHON:-} python3.12 python3.11 python3.13 python3; do
@@ -30,7 +30,7 @@ if [ -d .venv ] && ! supported .venv/bin/python; then
 fi
 [ -d .venv ] || "$PY" -m venv .venv
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -e ".[asr,test]" zhconv
+.venv/bin/pip install -q -e ".[asr,test]"
 
 mkdir -p models
 BASE=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1

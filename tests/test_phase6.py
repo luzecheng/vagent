@@ -136,3 +136,11 @@ def test_only_one_watcher_per_inbox(tmp_path):
     with Lock(tmp_path):
         assert (tmp_path / ".watch.lock").read_text() == str(os.getpid())
     assert not (tmp_path / ".watch.lock").exists()
+
+
+def test_doctor_flags_espeak_data_paths_too_long_for_espeak_ng():
+    """espeak-ng keeps its data path in a fixed 160-byte buffer; longer paths silently fall back and crash."""
+    from vagent.doctor import espeak_path_ok
+
+    assert espeak_path_ok("/Users/someone/vagent/.venv/lib/python3.12/site-packages/espeakng_loader/espeak-ng-data")
+    assert not espeak_path_ok("/" + "x" * 160 + "/espeak-ng-data")
