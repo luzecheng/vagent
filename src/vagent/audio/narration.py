@@ -66,7 +66,7 @@ def _assemble(script: Script, lang: str, spec: dict, config: dict, speed: float,
     cursor = lead
     sentences = []
     for sentence in script.sentences:
-        speech = _synth_cached(provider, spoken_text(sentence.text), lang, spec["voice"], speed, cache)
+        speech = _synth_cached(provider, spoken_text(sentence.text, lang), lang, spec["voice"], speed, cache)
         units = [{"text": u.text, "start": round(cursor + u.start, 3), "end": round(cursor + u.end, 3)}
                  for u in speech.units]
         sentences.append({

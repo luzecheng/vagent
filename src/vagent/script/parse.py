@@ -8,6 +8,8 @@ HAN = re.compile(r"[一-鿿]")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’\-.%$]*")
 END = "。！？；!?;"
 QUOTES = {"“": "", "”": "", "‘": "", "’": "", '"': "", "「": "", "」": "", "『": "", "』": ""}
+ZH_SYMBOLS = re.compile(r"\s*([+＋=＝])\s*")   # Chinese voices skip or garble these, so they are read as words
+ZH_SYMBOL_WORDS = {"+": "加", "＋": "加", "=": "等于", "＝": "等于"}
 
 
 @dataclass
@@ -74,10 +76,12 @@ def split(raw: str) -> Script:
     return script
 
 
-def spoken_text(text: str) -> str:
-    """Text handed to TTS: quotes removed (they are not pronounced)."""
+def spoken_text(text: str, lang: str) -> str:
+    """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, + and = spelled out."""
     for mark, repl in QUOTES.items():
         text = text.replace(mark, repl)
+    if lang == "zh":
+        text = ZH_SYMBOLS.sub(lambda m: ZH_SYMBOL_WORDS[m.group(1)], text)
     return text
 
 

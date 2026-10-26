@@ -1,11 +1,12 @@
 import re
 
+import numpy as np
 import pytest
 
 from vagent import config as configmod
 from vagent.script import parse
 from vagent.subtitles import segment
-from vagent.tts.base import proportional_timings
+from vagent.tts.base import SR, proportional_timings
 
 CONFIG = configmod.load()
 
@@ -173,3 +174,21 @@ def test_local_config_overrides_brand_and_defaults(tmp_path, monkeypatch):
     assert config["tts"]["en"]["provider"] == "kokoro"                       # untouched keys survive
     assert configmod.load(local_path=tmp_path / "missing.yaml")["tts"]["zh"]["provider"] == "kokoro"
     assert configmod.load({"tts": {"zh": {"voice": "x"}}}, local_path=local)["tts"]["zh"]["voice"] == "x"  # CLI wins
+
+
+def test_spoken_text_reads_math_symbols_aloud_in_chinese():
+    # CosyVoice skips "+" and garbles "=" (seen: "梦想C时现实C位决心空"), so zh narration spells them out
+    formula = "他给过一个公式：梦想 + 现实 + 决心 = 成功的人生。"
+    assert parse.spoken_text(formula, "zh") == "他给过一个公式：梦想加现实加决心等于成功的人生。"
+    assert parse.spoken_text("一＋一＝二", "zh") == "一加一等于二"
+    assert parse.spoken_text("dreams + reality = a successful life", "en") == "dreams + reality = a successful life"
+    assert parse.spoken_text("“享受”", "zh") == "享受"
+
+
+def test_audio_check_compares_against_what_was_meant_to_be_spoken(monkeypatch):
+    from vagent.qa import audio_check
+
+    monkeypatch.setattr(audio_check, "transcribe", lambda *a: "梦想加现实加决心等于成功的人生")
+    timeline = {"sentences": [{"id": 1, "text": "梦想 + 现实 + 决心 = 成功的人生", "clip_start": 0, "clip_end": 1}]}
+    result = audio_check.check(np.zeros(SR, np.float32), timeline, "zh")
+    assert result["flagged"] == []

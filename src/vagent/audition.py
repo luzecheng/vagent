@@ -44,13 +44,13 @@ def run(out_dir: Path, config: dict, log, candidates=None, seed: int = 7) -> Pat
     labels = [chr(ord("A") + i) for i in range(len(candidates))]
     random.Random(seed).shuffle(candidates)
     key, rows = {}, []
-    reference = "".join(s.text for s in script.sentences)
+    reference = "".join(spoken_text(s.text, "zh") for s in script.sentences)
     han, _ = units(reference)
     for label, spec in zip(labels, candidates):
         provider = get_provider(spec, config["paths"]["models"])
         pieces = []
         for sentence in script.sentences:
-            speech = provider.synth(spoken_text(sentence.text), "zh", spec["voice"], 1.0)
+            speech = provider.synth(spoken_text(sentence.text, "zh"), "zh", spec["voice"], 1.0)
             pieces += [speech.audio, np.zeros(int(0.4 * SR), np.float32)]
         if hasattr(provider, "close"):
             provider.close()  # free the model before the next candidate loads its own
