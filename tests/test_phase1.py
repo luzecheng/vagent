@@ -192,3 +192,12 @@ def test_audio_check_compares_against_what_was_meant_to_be_spoken(monkeypatch):
     timeline = {"sentences": [{"id": 1, "text": "梦想 + 现实 + 决心 = 成功的人生", "clip_start": 0, "clip_end": 1}]}
     result = audio_check.check(np.zeros(SR, np.float32), timeline, "zh")
     assert result["flagged"] == []
+
+
+def test_a_line_ending_in_a_comma_continues_on_the_next_line():
+    # each sentence is voiced on its own; a clause cut at a line break was read with a final cadence
+    raw = "开头一句。\n\n没有必要通过一个住址，\n向谁证明自己过得好。\n\n我们生活中有多少选择，\n都像租房一样？\n我给自己写下一条原则：\n做一个超级现实的人。"
+    texts = [s.text for s in parse.split(raw).sentences]
+    assert texts == ["开头一句。", "没有必要通过一个住址，向谁证明自己过得好。", "我们生活中有多少选择，都像租房一样？",
+                     "我给自己写下一条原则：", "做一个超级现实的人。"]
+    assert [s.text for s in parse.split("第一行，\n第二行。\n第三行。").sentences] == ["第一行，第二行。", "第三行。"]

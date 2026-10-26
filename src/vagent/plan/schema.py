@@ -137,6 +137,8 @@ def problems(board: Storyboard, zh: dict[int, str], en: dict[int, str], timings:
                            + "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()[:4]))
                 continue
             texts = " ".join(_texts(params))
+            if lang == "zh" and "..." in texts:
+                out.append(f"{scene.id}: params_zh uses '...'; the Chinese ellipsis is '……'")
             if lang == "en" and HAN.search(texts):
                 out.append(f"{scene.id}: params_en contains Chinese text")
             if lang == "zh" and texts and not HAN.search(texts):
@@ -147,6 +149,9 @@ def problems(board: Storyboard, zh: dict[int, str], en: dict[int, str], timings:
                 if _normal(number) not in stated:
                     out.append(f"{scene.id} params_{lang}: the number {number} does not appear in this scene's "
                                "sentences (data red line: show only numbers stated in the script)")
+            if scene.component == "bars" and any(item.get("value") is None for item in params["items"]):
+                out.append(f"{scene.id} params_{lang}: bars need a value stated in the script for every item; "
+                           "without stated values use another component (bar heights read as data)")
             sid = params.get("value_source_sentence")
             if sid is not None and sid not in scene.sentence_ids:
                 out.append(f"{scene.id}: value_source_sentence {sid} is not one of this scene's sentences")

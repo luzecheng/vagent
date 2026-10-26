@@ -7,6 +7,7 @@ import re
 HAN = re.compile(r"[一-鿿]")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’\-.%$]*")
 END = "。！？；!?;"
+CONTINUES = ("，", "、", ",")   # a line ending in one of these runs on into the next line
 QUOTES = {"“": "", "”": "", "‘": "", "’": "", '"': "", "「": "", "」": "", "『": "", "』": ""}
 ZH_SYMBOLS = re.compile(r"\s*([+＋=＝])\s*")   # Chinese voices skip or garble these, so they are read as words
 ZH_SYMBOL_WORDS = {"+": "加", "＋": "加", "=": "等于", "＝": "等于"}
@@ -51,7 +52,11 @@ def clean(raw: str) -> str:
 
 
 def split(raw: str) -> Script:
-    """One sentence per terminal punctuation mark; blank lines and line breaks are paragraph hints."""
+    """One sentence per terminal punctuation mark; blank lines are paragraph breaks.
+
+    A line break ends a sentence too, unless the line ends in a comma: then the sentence continues on the
+    next line and is voiced in one take (voicing the clause alone gives it a final, cut-off cadence).
+    """
     text = clean(raw)
     script = Script(raw=raw)
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
@@ -62,10 +67,14 @@ def split(raw: str) -> Script:
     sid = 0
     for p_index, paragraph in enumerate(paragraphs):
         units: list[str] = []
-        for line in paragraph.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
+        lines = [line.strip() for line in paragraph.split("\n") if line.strip()]
+        joined: list[str] = []
+        for line in lines:
+            if joined and joined[-1].endswith(CONTINUES):
+                joined[-1] += (" " if joined[-1].endswith(",") else "") + line
+            else:
+                joined.append(line)
+        for line in joined:
             parts = re.findall(rf"[^{END}]+[{END}]+|[^{END}]+$", line)
             units.extend(part.strip() for part in parts if part.strip())
         for u_index, unit in enumerate(units):

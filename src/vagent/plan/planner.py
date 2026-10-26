@@ -8,7 +8,7 @@ from ..llm.client import structured
 from ..render.components import REGISTRY
 from .schema import Storyboard, problems
 
-PROMPT_VERSION = 3
+PROMPT_VERSION = 4
 
 PURPOSE = {
     "hook": "opening title: the single most striking line, big. ALWAYS the first scene",
@@ -17,7 +17,7 @@ PURPOSE = {
     "trend": "a line going up/down/volatile over time; schematic unless the script states numbers",
     "short_vs_long": "short-term noise versus long-term direction",
     "timeline": "2-5 ordered steps or stages",
-    "bars": "2-5 quantities side by side; values only if the script states them, else schematic",
+    "bars": "2-5 quantities side by side; ONLY when the script states every value",
     "big_number": "one number stated in the script, very big",
     "quote": "a sentence worth quoting as a quote card",
     "checklist": "2-5 short parallel items (rules, do's and don'ts)",
@@ -39,14 +39,17 @@ Rules:
 - Scene 1 is ALWAYS `hook` and must cover the first sentences until at least 3 seconds have passed.
   Its text is the most striking line of the whole script (hook_sentence_id), shortened if needed.
 - Visual text is short: titles and labels, not full sentences (except quote/punchline/hook).
+- Visual text condenses what the script says; it never adds a verdict, conclusion or claim the script
+  does not make (if the script only asks "is it worth it?", do not answer it on screen).
+- Chinese visual text uses Chinese punctuation: the ellipsis is "……", never "...".
 - Match structure: enumerations ("第一/第二/第三") -> three_things or checklist; several questions in a
   row -> question_stack; "A is a choice, B is a choice, you can't escape the consequence" ->
   choice_consequence; "you think X, actually Y" -> strike; the thesis sentence -> punchline.
 - For list-like components set reveal_on: the sentence id at which each item should appear.
 - Never use the same component three times in a row; use the `layout` variants where available.
 - Typical scene length 4-12 seconds; do not create scenes shorter than about 2.5 seconds.
-- DATA RED LINE: never show a number that is not in the script. Charts without stated numbers are
-  schematic (leave values empty). big_number needs a number the script states.
+- DATA RED LINE: never show a number that is not in the script. A trend without stated numbers is
+  schematic (leave values empty); bars and big_number need values the script states.
 - content_type: classify the whole script. Disclaimer "on" only for investing / crypto / personal
   finance content; mindset or life advice gets no disclaimer. Give a short reason.
 Return JSON only."""

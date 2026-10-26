@@ -135,3 +135,18 @@ def test_localize_keeps_original_when_only_punctuation_differs(tmp_path, monkeyp
     assert [s.text for s in zh.sentences[:2]] == ["投资收益，应该来自价值创造", "现在是不是该买入？"]
     assert zh.sentences[2].text == "短期价格，真的很难预测。"          # a real edit, punctuation normalised
     assert [c["id"] for c in changes] == [3]
+
+
+def test_bars_need_values_stated_in_the_script():
+    # schematic bar heights read as data the script never gave
+    scenes = good_scenes()
+    scenes[2] = {"id": "s03", "sentence_ids": [4], "component": "bars",
+                 "params_zh": {"items": [{"label": "朋友来访"}, {"label": "我每天住"}]},
+                 "params_en": {"items": [{"label": "Friend visits"}, {"label": "I live there"}]}}
+    assert any("bars need a value" in p for p in problems(board(scenes), ZH, EN, TIMES))
+
+
+def test_chinese_visual_text_uses_the_chinese_ellipsis():
+    scenes = good_scenes()
+    scenes[2]["params_zh"] = {"word": "看到我住这里..."}
+    assert any("……" in p for p in problems(board(scenes), ZH, EN, TIMES))
