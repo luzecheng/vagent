@@ -185,6 +185,14 @@ def test_spoken_text_reads_math_symbols_aloud_in_chinese():
     assert parse.spoken_text("“享受”", "zh") == "享受"
 
 
+def test_spoken_text_turns_a_chinese_dash_into_a_pause():
+    # CosyVoice voiced "——" as a syllable (heard "心里还在说虚应该")
+    assert parse.spoken_text("心里还在说——不应该啊。", "zh") == "心里还在说，不应该啊。"
+    assert parse.spoken_text("心里还在说--不应该啊。", "zh") == "心里还在说，不应该啊。"
+    assert parse.spoken_text("我们——包括你——都一样", "zh") == "我们，包括你，都一样"
+    assert parse.spoken_text("2020-2021", "zh") == "2020-2021"
+
+
 def test_audio_check_compares_against_what_was_meant_to_be_spoken(monkeypatch):
     from vagent.qa import audio_check
 

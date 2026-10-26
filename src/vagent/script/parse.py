@@ -11,6 +11,7 @@ CONTINUES = ("，", "、", ",")   # a line ending in one of these runs on into t
 QUOTES = {"“": "", "”": "", "‘": "", "’": "", '"': "", "「": "", "」": "", "『": "", "』": ""}
 ZH_SYMBOLS = re.compile(r"\s*([+＋=＝])\s*")   # Chinese voices skip or garble these, so they are read as words
 ZH_SYMBOL_WORDS = {"+": "加", "＋": "加", "=": "等于", "＝": "等于"}
+ZH_DASH = re.compile(r"\s*(?:——|—|--)\s*")   # a dash is a pause, not a syllable (a hyphen as in 2020-2021 stays)
 
 
 @dataclass
@@ -86,11 +87,13 @@ def split(raw: str) -> Script:
 
 
 def spoken_text(text: str, lang: str) -> str:
-    """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, + and = spelled out."""
+    """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, + and = spelled out and
+    dashes read as a pause."""
     for mark, repl in QUOTES.items():
         text = text.replace(mark, repl)
     if lang == "zh":
         text = ZH_SYMBOLS.sub(lambda m: ZH_SYMBOL_WORDS[m.group(1)], text)
+        text = ZH_DASH.sub("，", text)
     return text
 
 
