@@ -138,6 +138,8 @@ def test_asr_error_rate():
     assert error_rate("每天读书", "每天读书", "zh") == 0
     assert error_rate("每天读书", "美甜读书", "zh") == pytest.approx(0.5)
     assert error_rate("Hold the line.", "hold the line", "en") == 0
+    # Whisper writes a spoken year as digits; the narration was asked to say it digit by digit
+    assert error_rate("一九八二年，他判断错了。", "1982年他判断错了", "zh") == 0
 
 
 def test_fresh_and_cached_narration_are_identical(tmp_path):
@@ -183,6 +185,15 @@ def test_spoken_text_reads_math_symbols_aloud_in_chinese():
     assert parse.spoken_text("一＋一＝二", "zh") == "一加一等于二"
     assert parse.spoken_text("dreams + reality = a successful life", "en") == "dreams + reality = a successful life"
     assert parse.spoken_text("“享受”", "zh") == "享受"
+
+
+def test_spoken_text_reads_years_digit_by_digit_in_chinese():
+    # CosyVoice read "1982 年" as a cardinal, "一千九百八十二年"; a year is said digit by digit
+    assert parse.spoken_text("1982 年，他公开预测经济会崩溃", "zh") == "一九八二年，他公开预测经济会崩溃"
+    assert parse.spoken_text("2006年和2026 年", "zh") == "二零零六年和二零二六年"
+    assert parse.spoken_text("1980年代", "zh") == "一九八零年代"
+    assert parse.spoken_text("借了四千美元，花了 4000 元", "zh") == "借了四千美元，花了 4000 元"  # not a year
+    assert parse.spoken_text("In 1982 he was wrong.", "en") == "In 1982 he was wrong."
 
 
 def test_spoken_text_spells_out_capital_letter_acronyms_in_chinese():

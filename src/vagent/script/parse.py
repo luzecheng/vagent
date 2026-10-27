@@ -12,6 +12,8 @@ QUOTES = {"“": "", "”": "", "‘": "", "’": "", '"': "", "「": "", "」":
 ZH_SYMBOLS = re.compile(r"\s*([+＋=＝])\s*")   # Chinese voices skip or garble these, so they are read as words
 ZH_SYMBOL_WORDS = {"+": "加", "＋": "加", "=": "等于", "＝": "等于"}
 ZH_ACRONYM = re.compile(r"(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])")  # read as one word ("AI" -> "爱") unless spaced
+ZH_YEAR = re.compile(r"(?<!\d)(\d{4})\s*年")  # a year is said digit by digit, not as a cardinal number
+ZH_DIGITS = dict(zip("0123456789", "零一二三四五六七八九"))
 ZH_DASH = re.compile(r"\s*(?:——|—|--)\s*")   # a dash is a pause, not a syllable (a hyphen as in 2020-2021 stays)
 
 
@@ -89,13 +91,14 @@ def split(raw: str) -> Script:
 
 def spoken_text(text: str, lang: str) -> str:
     """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, + and = spelled out,
-    dashes read as a pause and capital-letter acronyms spelled letter by letter."""
+    dashes read as a pause, capital-letter acronyms spelled letter by letter and years read digit by digit."""
     for mark, repl in QUOTES.items():
         text = text.replace(mark, repl)
     if lang == "zh":
         text = ZH_SYMBOLS.sub(lambda m: ZH_SYMBOL_WORDS[m.group(1)], text)
         text = ZH_DASH.sub("，", text)
         text = ZH_ACRONYM.sub(lambda m: " ".join(m.group()), text)
+        text = ZH_YEAR.sub(lambda m: "".join(ZH_DIGITS[d] for d in m.group(1)) + "年", text)
     return text
 
 
