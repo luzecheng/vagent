@@ -185,6 +185,16 @@ def test_spoken_text_reads_math_symbols_aloud_in_chinese():
     assert parse.spoken_text("“享受”", "zh") == "享受"
 
 
+def test_spoken_text_spells_out_capital_letter_acronyms_in_chinese():
+    # CosyVoice reads a run of capitals as one word ("用AI" came out as "用爱"); spaced, it says each letter
+    assert parse.spoken_text("就是学会用 AI。", "zh") == "就是学会用 A I。"
+    assert parse.spoken_text("借助AI，做出了工具", "zh") == "借助A I，做出了工具"
+    assert parse.spoken_text("问问CEO和PPT", "zh") == "问问C E O和P P T"
+    assert parse.spoken_text("iPhone 和 Excel 不变", "zh") == "iPhone 和 Excel 不变"  # not acronyms
+    assert parse.spoken_text("ABCDEF 太长不拆", "zh") == "ABCDEF 太长不拆"
+    assert parse.spoken_text("Learn to use AI.", "en") == "Learn to use AI."
+
+
 def test_spoken_text_turns_a_chinese_dash_into_a_pause():
     # CosyVoice voiced "——" as a syllable (heard "心里还在说虚应该")
     assert parse.spoken_text("心里还在说——不应该啊。", "zh") == "心里还在说，不应该啊。"
