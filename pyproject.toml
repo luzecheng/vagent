@@ -21,3 +21,6 @@ vagent = "vagent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"vagent.render" = ["icons/*.svg", "icons/LICENSE"]

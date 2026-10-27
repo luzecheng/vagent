@@ -6,9 +6,10 @@ import json
 from .. import cache as cachemod
 from ..llm.client import structured
 from ..render.components import REGISTRY
+from ..render.icons import names as icon_names
 from .schema import Storyboard, problems
 
-PROMPT_VERSION = 4
+PROMPT_VERSION = 5
 
 PURPOSE = {
     "hook": "opening title: the single most striking line, big. ALWAYS the first scene",
@@ -42,6 +43,10 @@ Rules:
 - Visual text condenses what the script says; it never adds a verdict, conclusion or claim the script
   does not make (if the script only asks "is it worth it?", do not answer it on screen).
 - Chinese visual text uses Chinese punctuation: the ellipsis is "……", never "...".
+- ICONS make the video less text-heavy: set `icon` / `icons` (same names in params_zh and params_en)
+  wherever a concrete, literal object fits the line - a house for renting, a wallet for money, a clock
+  for time, an eye for seeing clearly, a scale for weighing a trade-off. Aim for icons in about half the
+  scenes; leave them out when only a far-fetched metaphor would fit. Use only names from the icon list.
 - Match structure: enumerations ("第一/第二/第三") -> three_things or checklist; several questions in a
   row -> question_stack; "A is a choice, B is a choice, you can't escape the consequence" ->
   choice_consequence; "you think X, actually Y" -> strike; the thesis sentence -> punchline.
@@ -60,6 +65,7 @@ def catalog() -> str:
     for name, (_, model) in REGISTRY.items():
         schema = model.model_json_schema()
         rows.append(f"## {name}: {PURPOSE[name]}\nparams schema: {json.dumps(schema, ensure_ascii=False)}")
+    rows.append("# Icon list (line icons drawn on stroke by stroke)\n\n" + ", ".join(sorted(icon_names())))
     return "\n\n".join(rows)
 
 

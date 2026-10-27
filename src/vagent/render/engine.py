@@ -1,7 +1,8 @@
 """Video engine.
 
 1. Each scene renders to its own clip (PIL frames -> ffmpeg), cached by a hash
-   of everything that affects its pixels, in parallel across scenes.
+   of everything that affects its pixels, in parallel across scenes. Frames get
+   the shared motion layer (camera push, transitions, light field; see motion.py).
 2. Each subtitle screen renders to one transparent PNG (cheap).
 3. One ffmpeg pass concatenates the clips, overlays every subtitle PNG during
    its time window (plus an optional watermark), and muxes the audio.
@@ -11,7 +12,7 @@ that clip.
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import json
 import os
 from pathlib import Path
@@ -20,12 +21,12 @@ import subprocess
 from PIL import Image, ImageDraw, ImageFont
 
 from .. import cache as cachemod
-from .canvas import Canvas, mix
+from . import motion
+from .canvas import Canvas
 from .components import Ctx, draw
 from .theme import Box, Theme, Variant
 
-ENGINE_REV = 3
-FADE = 0.28
+ENGINE_REV = 4
 
 
 def _code_fingerprint() -> str:
@@ -34,7 +35,7 @@ def _code_fingerprint() -> str:
 
     here = Path(__file__).resolve().parent
     digest = hashlib.sha256()
-    for name in ("components.py", "canvas.py", "theme.py", "engine.py"):
+    for name in ("components.py", "canvas.py", "theme.py", "engine.py", "motion.py"):
         digest.update((here / name).read_bytes())
     return digest.hexdigest()[:16]
 
@@ -67,8 +68,10 @@ class SubtitleImage:
 
 def _scene_key(scene: SceneSpec, theme: Theme, variant: Variant, fps: int) -> str:
     local = [round(r - scene.start, 3) for r in scene.reveals]
-    return cachemod.key(ENGINE_REV, CODE, scene.component, scene.params, round(scene.end - scene.start, 3), local,
-                        round(scene.scale, 3), asdict(theme), asdict(variant), fps)
+    # the light field depends on the absolute start time, so a scene that moved re-renders
+    return cachemod.key(ENGINE_REV, CODE, scene.component, scene.params, round(scene.start, 3),
+                        round(scene.end - scene.start, 3), local, round(scene.scale, 3), asdict(theme),
+                        asdict(variant), fps)
 
 
 def render_frame(scene: SceneSpec, t_local: float, theme: Theme, variant: Variant) -> tuple[Image.Image, list]:
@@ -76,12 +79,15 @@ def render_frame(scene: SceneSpec, t_local: float, theme: Theme, variant: Varian
     canvas = Canvas(variant.width, variant.height, theme.background)
     ctx = Ctx(theme, variant, duration, [r - scene.start for r in scene.reveals], scene.scale)
     draw(canvas, scene.component, t_local, scene.params, ctx)
-    image = canvas.finish()
-    # dip to background at both ends (scene-to-scene fade)
-    k = min(1.0, t_local / FADE, max(0.0, duration - t_local) / FADE)
-    if k < 1.0:
-        image = Image.blend(Image.new("RGB", image.size, theme.background), image, max(0.0, k))
-    return image, canvas.records
+    scale, alpha = motion.zoom_alpha(t_local, duration)
+    centre = motion.pivot(variant.content)
+    image = motion.transform(canvas.img, scale, centre, variant.width, variant.height, theme.background)
+    if alpha < 1.0:
+        image = Image.blend(Image.new("RGB", image.size, theme.background), image, max(0.0, alpha))
+    light = motion.light_field(scene.start + t_local, variant.width, variant.height,
+                               {"accent": theme.accent, "positive": theme.positive})
+    records = [replace(r, box=motion.scale_box(r.box, scale, centre)) for r in canvas.records]
+    return motion.add_light(image, light), records
 
 
 def fit_scene(scene: SceneSpec, theme: Theme, variant: Variant) -> list[str]:
@@ -91,7 +97,7 @@ def fit_scene(scene: SceneSpec, theme: Theme, variant: Variant) -> list[str]:
     """
     from ..qa.layout import outside
 
-    probe_t = max(0.0, scene.end - scene.start - FADE - 0.05)
+    probe_t = max(0.0, scene.end - scene.start - motion.LEAVE - 0.05)
     for scale in (1.0, 0.9, 0.8, 0.7, 0.6, 0.5):
         scene.scale = scale
         _, records = render_frame(scene, probe_t, theme, variant)
@@ -112,7 +118,7 @@ def _render_clip(job) -> tuple[str, str, list]:
     records = []
     for n in range(frames):
         image, recs = render_frame(scene, n / fps, theme, variant)
-        if n == frames // 2 or n == frames - int(FADE * fps) - 1:  # mid-scene and fully revealed frames
+        if n == frames // 2 or n == frames - int(motion.LEAVE * fps) - 1:  # mid-scene and fully revealed frames
             records.extend((r.text, asdict(r.box), r.font, r.size) for r in recs)
         proc.stdin.write(image.tobytes())
     proc.stdin.close()

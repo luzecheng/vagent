@@ -13,11 +13,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .canvas import Canvas, appear, clamp, ease_in_out, mix
+from . import icons
+from .canvas import Canvas, appear, clamp, ease_out, mix
 from .theme import Theme, Variant
 
 
@@ -46,22 +48,33 @@ def _rise(t: float, t0: float, dist: float = 40) -> tuple[float, float]:
 
 
 # ---------------------------------------------------------------- parameter models
+def _icon_field():
+    return Field("", description="optional icon name from the icon list; '' for none")
+
+
+def _icons_field():
+    return Field(default_factory=list, description="optional icon names from the icon list, one per item; [] for none")
+
+
 class Hook(BaseModel):
     text: str = Field(description="The most striking line of the script, verbatim or lightly trimmed (<= 22 zh chars / 60 en chars)")
     sub: str = ""
     layout: Literal[0, 1] = 0
+    icon: str = _icon_field()
 
 
 class Keyword(BaseModel):
     word: str = Field(description="1-6 zh chars / 1-3 en words")
     caption: str = ""
     layout: Literal[0, 1] = 0
+    icon: str = _icon_field()
 
 
 class Card(BaseModel):
     title: str
     text: str = ""
     mark: Literal["check", "warn"] = "check"
+    icon: str = Field("", description="optional icon name from the icon list, shown instead of the mark symbol")
 
 
 class CompareCards(BaseModel):
@@ -88,6 +101,7 @@ class ShortVsLong(BaseModel):
 class TimelineItem(BaseModel):
     label: str
     text: str = ""
+    icon: str = _icon_field()
 
 
 class Timeline(BaseModel):
@@ -119,6 +133,7 @@ class Quote(BaseModel):
 class Checklist(BaseModel):
     title: str = ""
     items: list[str] = Field(min_length=2, max_length=5)
+    icons: list[str] = _icons_field()
 
 
 class Strike(BaseModel):
@@ -129,6 +144,7 @@ class Strike(BaseModel):
 class ThreeThings(BaseModel):
     title: str
     items: list[str] = Field(min_length=3, max_length=3)
+    icons: list[str] = _icons_field()
 
 
 class QuestionStack(BaseModel):
@@ -174,6 +190,15 @@ def _top_for(ctx: Ctx, group_h: float, bias: float = 0.42) -> float:
     return box.y + max(0.0, (box.h - group_h) * bias)
 
 
+def _draw_on(t: float, t0: float, dur: float = 0.8) -> float:
+    """Stroke progress for an icon drawn on from t0."""
+    return ease_out((t - t0) / dur)
+
+
+def _icon_at(items_icons: list[str], i: int) -> str:
+    return items_icons[i] if i < len(items_icons) else ""
+
+
 def _ordinal(i: int, lang: str) -> str:
     return ["第一", "第二", "第三", "第四", "第五"][i] if lang == "zh" else ["One", "Two", "Three", "Four", "Five"][i]
 
@@ -182,21 +207,25 @@ def _ordinal(i: int, lang: str) -> str:
 def hook(c: Canvas, t: float, p: Hook, ctx: Ctx):
     x, y, w, h, cx, cy = _area(ctx)
     th = ctx.theme
-    k, dy = _rise(t, 0.1)
     bar = appear(t, 0.0, 0.5)
     font = th.font("black")
     fitted = c.fit(p.text, font, w * 0.92, h * 0.5, 100 if ctx.lang == "zh" else 88, min_size=48, max_lines=3)
-    group = fitted.height + (110 if p.sub else 0) + 40
-    top = _top_for(ctx, group)
+    icon_h = 200 if p.icon else 0
+    group = fitted.height + (110 if p.sub else 0) + 40 + icon_h
+    top = _top_for(ctx, group) + icon_h
     if p.layout == 0:
+        if p.icon:
+            icons.draw(c, p.icon, cx, top - icon_h + 40, 150, th.accent, _draw_on(t, 0.0, 0.9))
         c.rect(cx - 60 * bar, top - 40, 120 * bar, 8, r=4, fill=th.accent)
-        box = c.text_block(fitted, font, cx, top + dy, th.text, "center", k)
+        box = c.text_block_kinetic(fitted, font, cx, top, th.text, t, 0.1)
         if p.sub:
             _block(c, ctx, p.sub, "medium", 40, w * 0.85, 120, cx, box.bottom + 40, th.muted, appear(t, 0.7))
     else:
         fitted = c.fit(p.text, font, w * 0.86, h * 0.5, 96 if ctx.lang == "zh" else 84, min_size=48, max_lines=3)
+        if p.icon:
+            icons.draw(c, p.icon, x + 50 + 70, top - icon_h + 60, 140, th.accent, _draw_on(t, 0.0, 0.9))
         c.rect(x + 10, top, 10, fitted.height * bar, r=5, fill=th.accent)
-        box = c.text_block(fitted, font, x + 50, top + dy, th.text, "left", k)
+        box = c.text_block_kinetic(fitted, font, x + 50, top, th.text, t, 0.1, align="left")
         if p.sub:
             _block(c, ctx, p.sub, "medium", 38, w * 0.8, 120, x + 50, box.bottom + 36, th.muted, appear(t, 0.7),
                    align="left")
@@ -205,11 +234,12 @@ def hook(c: Canvas, t: float, p: Hook, ctx: Ctx):
 def keyword(c: Canvas, t: float, p: Keyword, ctx: Ctx):
     x, y, w, h, cx, cy = _area(ctx)
     th = ctx.theme
-    k = appear(t, 0.1, 0.5)
-    scale = 0.85 + 0.15 * k
-    box = _block(c, ctx, p.word, "black", 140 * scale, w * 0.9, h * 0.35, cx, cy - h * 0.16, th.accent, k,
-                 max_lines=2, min_size=60)
-    sweep = appear(t, 0.45, 0.6)
+    font = th.font("black")
+    fitted = c.fit(p.word, font, w * 0.9, h * 0.35, 140 * ctx.scale, min_size=60 * ctx.scale, max_lines=2)
+    if p.icon:
+        icons.draw(c, p.icon, cx, cy - h * 0.16 - 130, 160, th.text, _draw_on(t, 0.0, 0.9))
+    box = c.text_block_kinetic(fitted, font, cx, cy - h * 0.16, th.accent, t, 0.1, step=0.08, dur=0.45, rise=0.45)
+    sweep = appear(t, 0.1 + 0.08 * len(p.word) + 0.2, 0.6)
     c.rect(cx - box.w / 2, box.bottom + 18, box.w * sweep, 8, r=4, fill=th.accent, alpha=0.9)
     if p.caption:
         _block(c, ctx, p.caption, "medium", 42, w * 0.85, 160, cx, box.bottom + 60, th.text, appear(t, 0.8))
@@ -225,8 +255,11 @@ def compare_cards(c: Canvas, t: float, p: CompareCards, ctx: Ctx):
         top = first + i * (card_h + 40) + dy
         color = th.positive if card.mark == "check" else th.negative
         c.rect(x, top, w, card_h, r=28, fill=th.surface, outline=mix(th.surface, color, 0.8), width=3, alpha=k)
-        c.circle(x + 80, top + 80, 40, fill=mix(th.surface, color, 0.25), alpha=k, under=th.surface)
-        if card.mark == "check":
+        disc = mix(th.surface, color, 0.25)
+        c.circle(x + 80, top + 80, 40, fill=disc, alpha=k, under=th.surface)
+        if card.icon:
+            icons.draw(c, card.icon, x + 80, top + 80, 48, color, _draw_on(t, ctx.reveal(i, 1.2) + 0.1), k, disc)
+        elif card.mark == "check":
             c.check(x + 80, top + 80, 44, color, 7, k, under=th.surface)
         else:
             c.bang(x + 80, top + 80, 64, color, k, under=th.surface)
@@ -315,7 +348,12 @@ def timeline(c: Canvas, t: float, p: Timeline, ctx: Ctx):
     for i, item in enumerate(p.items):
         k, dy = _rise(t, ctx.reveal(i, 1.0), 24)
         top = first + i * step
-        c.circle(rail_x, top, 18, fill=th.accent, alpha=k)
+        if item.icon:
+            disc = mix(th.background, th.accent, 0.22)
+            c.circle(rail_x, top, 32, fill=disc, outline=th.accent, width=3, alpha=k)
+            icons.draw(c, item.icon, rail_x, top, 38, th.accent, _draw_on(t, ctx.reveal(i, 1.0)), k, disc)
+        else:
+            c.circle(rail_x, top, 18, fill=th.accent, alpha=k)
         c.text(rail_x + 50, top, item.label, th.font("bold"), 54, th.accent, anchor="lm", alpha=k)
         if item.text:
             _block(c, ctx, item.text, "regular", 44, w - 110, step - 70, rail_x + 50, top + 44 + dy, th.text, k,
@@ -349,26 +387,42 @@ def bars(c: Canvas, t: float, p: Bars, ctx: Ctx):
         _block(c, ctx, p.caption, "bold", 48, w, 160, cx, base_y + 110, th.text, appear(t, 1.0))
 
 
+def _counting(value: str, progress: float) -> str:
+    """`value` with its number counted up to `progress` (0..1), same format; text without a number is unchanged."""
+    m = re.match(r"^(\D*?)(\d[\d,]*(?:\.\d+)?)(.*)$", value, re.S)
+    if not m or progress >= 1:
+        return value
+    digits = m.group(2)
+    decimals = len(digits.split(".")[1]) if "." in digits else 0
+    current = float(digits.replace(",", "")) * progress
+    shown = f"{current:,.{decimals}f}" if "," in digits else f"{current:.{decimals}f}"
+    return m.group(1) + shown + m.group(3)
+
+
 def big_number(c: Canvas, t: float, p: BigNumber, ctx: Ctx):
     x, y, w, h, cx, cy = _area(ctx)
     th = ctx.theme
     k = appear(t, 0.05, 0.6)
-    size = 220 * (0.9 + 0.1 * k)
-    box = _block(c, ctx, p.value, "black", size, w, h * 0.4, cx, cy - h * 0.25, th.accent, k, max_lines=1,
-                 min_size=90)
+    font = th.font("black")
+    # sized for the final value, then counted up to it (the settled frame shows exactly the script's value)
+    fitted = c.fit(p.value, font, w, h * 0.4, 220 * ctx.scale, min_size=90 * ctx.scale, max_lines=1)
+    top = cy - h * 0.25
+    shown = _counting(p.value, ease_out(clamp((t - 0.1) / 1.1)))
+    c.text(cx, top + fitted.line_height / 2, shown, font, fitted.size * (0.9 + 0.1 * k), th.accent, alpha=k)
     if p.caption:
-        _block(c, ctx, p.caption, "medium", 46, w * 0.9, 200, cx, box.bottom + 40, th.text, appear(t, 0.6))
+        _block(c, ctx, p.caption, "medium", 46, w * 0.9, 200, cx, top + fitted.height + 40, th.text, appear(t, 0.6))
 
 
 def quote(c: Canvas, t: float, p: Quote, ctx: Ctx):
     x, y, w, h, cx, cy = _area(ctx)
     th = ctx.theme
-    k, dy = _rise(t, 0.1, 30)
+    k = appear(t, 0.0, 0.4)
     font = th.font("bold")
     fitted = c.fit(p.text, font, w - 60, h * 0.6, 68, min_size=40, max_lines=5)
     top = _top_for(ctx, fitted.height + 140)
     c.text(x + 20, top + 20, "“", th.font("black"), 200, th.accent, anchor="lm", alpha=k * 0.9, record=False)
-    box = c.text_block(fitted, font, x + 40, top + 110 + dy, th.text, "left", k)
+    box = c.text_block_kinetic(fitted, font, x + 40, top + 110, th.text, t, 0.25, align="left", step=0.02,
+                               dur=0.3, rise=0.2)
     if p.attribution:
         c.text(x + 40, box.bottom + 50, "— " + p.attribution, th.font("medium"), 36, th.muted, anchor="lm",
                alpha=appear(t, 0.8))
@@ -385,8 +439,12 @@ def checklist(c: Canvas, t: float, p: Checklist, ctx: Ctx):
     for i, item in enumerate(p.items):
         k, dy = _rise(t, ctx.reveal(i, 0.9), 24)
         row = top + i * step + dy
-        c.circle(x + 40, row + 40, 38, fill=mix(th.background, th.positive, 0.25), alpha=k)
-        c.text(x + 40, row + 40, str(i + 1), th.font("bold"), 42, th.positive, alpha=k, record=False)
+        disc = mix(th.background, th.positive, 0.25)
+        c.circle(x + 40, row + 40, 38, fill=disc, alpha=k)
+        if _icon_at(p.icons, i):
+            icons.draw(c, p.icons[i], x + 40, row + 40, 44, th.positive, _draw_on(t, ctx.reveal(i, 0.9)), k, disc)
+        else:
+            c.text(x + 40, row + 40, str(i + 1), th.font("bold"), 42, th.positive, alpha=k, record=False)
         _block_mid(c, ctx, item, "medium", 52, w - 120, step - 20, x + 110, row + 40, th.text, k)
 
 
@@ -420,7 +478,12 @@ def three_things(c: Canvas, t: float, p: ThreeThings, ctx: Ctx):
         c.text(x + 40, row + (step - 30) / 2, _ordinal(i, ctx.lang), th.font("black"), 48, th.accent, anchor="lm",
                alpha=k, under=fill)
         label_w = c.measure(_ordinal(i, ctx.lang), th.font("black"), 48) + 80
-        _block_mid(c, ctx, item, "bold", 54, w - label_w - 40, step - 60, x + label_w, row + (step - 30) / 2,
+        icon_w = 0
+        if _icon_at(p.icons, i):
+            icon_w = 110
+            icons.draw(c, p.icons[i], x + w - 74, row + (step - 30) / 2, 76, th.accent if active else th.text,
+                       _draw_on(t, ctx.reveal(i, 1.5) + 0.2), k, fill)
+        _block_mid(c, ctx, item, "bold", 54, w - label_w - 40 - icon_w, step - 60, x + label_w, row + (step - 30) / 2,
                    th.text, k, under=fill)
 
 
@@ -470,25 +533,30 @@ def choice_consequence(c: Canvas, t: float, p: ChoiceConsequence, ctx: Ctx):
 def punchline(c: Canvas, t: float, p: Punchline, ctx: Ctx):
     x, y, w, h, cx, cy = _area(ctx)
     th = ctx.theme
-    k = appear(t, 0.1, 0.6)
-    scale = 0.92 + 0.08 * ease_in_out(clamp(t / 0.8))
     font = th.font("black")
-    fitted = c.fit(p.text, font, w * 0.95, h * 0.6, 100 * scale, min_size=50, max_lines=4)
+    fitted = c.fit(p.text, font, w * 0.95, h * 0.6, 100 * ctx.scale, min_size=50 * ctx.scale, max_lines=4)
     top = cy - fitted.height / 2 - h * 0.06
-    c.text_block(fitted, font, cx, top, th.text, "center", k)
-    if p.highlight and p.highlight in p.text:
-        # recolour the highlighted span: redraw it in the accent colour on its line
+    landed = 0.1 + 0.045 * len(p.text) + 0.25  # every glyph has popped in
+    span = None
+    if p.highlight:
         for li, line in enumerate(fitted.lines):
             idx = line.find(p.highlight)
-            if idx < 0:
-                continue
-            left = cx - fitted.widths[li] / 2 + c.measure(line[:idx], font, fitted.size)
-            c.text(left, top + li * fitted.line_height + fitted.line_height / 2, p.highlight, font, fitted.size,
-                   th.accent, anchor="lm", alpha=appear(t, 0.6, 0.5), record=False)
-            span_w = c.measure(p.highlight, font, fitted.size)
-            c.rect(left, top + (li + 1) * fitted.line_height - 6, span_w * appear(t, 0.8, 0.6), 8, r=4,
-                   fill=th.accent, alpha=k)
-            break
+            if idx >= 0:
+                left = cx - fitted.widths[li] / 2 + c.measure(line[:idx], font, fitted.size)
+                span = (li, left, c.measure(p.highlight, font, fitted.size))
+                break
+    marker = mix(th.background, th.accent, 0.28)
+    if span:
+        # highlighter pen: a gold band sweeps under the phrase once the sentence has landed
+        li, left, span_w = span
+        sweep = appear(t, landed, 0.5)
+        band_top = top + li * fitted.line_height + fitted.line_height * 0.16
+        c.rect(left - 10, band_top, (span_w + 20) * sweep, fitted.line_height * 0.7, r=12, fill=marker,
+               alpha=min(1.0, sweep * 3))
+    c.text_block_kinetic(fitted, font, cx, top, th.text, t, 0.1)
+    if span:
+        c.text(left, top + li * fitted.line_height + fitted.line_height / 2, p.highlight, font, fitted.size,
+               th.accent, anchor="lm", alpha=appear(t, landed + 0.3, 0.4), under=marker, record=False)
 
 
 REGISTRY = {

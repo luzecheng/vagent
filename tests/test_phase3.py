@@ -150,3 +150,20 @@ def test_chinese_visual_text_uses_the_chinese_ellipsis():
     scenes = good_scenes()
     scenes[2]["params_zh"] = {"word": "看到我住这里..."}
     assert any("……" in p for p in problems(board(scenes), ZH, EN, TIMES))
+
+
+def test_icons_must_come_from_the_icon_set():
+    scenes = good_scenes()
+    scenes[2]["params_zh"]["icon"] = "book"
+    scenes[2]["params_en"]["icon"] = "book"
+    assert problems(board(scenes), ZH, EN, TIMES) == []
+    scenes[2]["params_zh"]["icon"] = "dragon"
+    assert any("unknown icon 'dragon'" in p for p in problems(board(scenes), ZH, EN, TIMES))
+    scenes = good_scenes()
+    scenes[2] = {"id": "s03", "sentence_ids": [4], "component": "checklist",
+                 "params_zh": {"items": ["读一页", "走十分钟"], "icons": ["book", "walk", "run"]},
+                 "params_en": {"items": ["Read a page", "Walk ten minutes"], "icons": ["book", "walk"]}}
+    assert any("more icons than items" in p for p in problems(board(scenes), ZH, EN, TIMES))
+    scenes = good_scenes()  # an icon name is not on-screen text: its digits are not data
+    scenes[2]["params_zh"]["icon"] = scenes[2]["params_en"]["icon"] = "book-2"
+    assert problems(board(scenes), ZH, EN, TIMES) == []

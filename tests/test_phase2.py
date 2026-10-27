@@ -71,3 +71,24 @@ def test_scene_cache_key_changes_with_drawing_code(monkeypatch):
     before = engine._scene_key(scene, th, v, 30)
     monkeypatch.setattr(engine, "CODE", "different-code")
     assert engine._scene_key(scene, th, v, 30) != before
+
+
+def test_every_icon_parses_and_draws_on():
+    from vagent.render import icons
+    from vagent.render.canvas import Canvas
+
+    assert len(icons.names()) > 100
+    for name in icons.names():
+        assert icons.strokes(name), name
+    c = Canvas(200, 200, (0, 0, 0))
+    icons.draw(c, "home", 100, 100, 120, (255, 255, 255), progress=0.5)
+    assert c.finish().getbbox() is not None
+
+
+def test_svg_arc_and_relative_commands():
+    from vagent.render.icons import parse_path
+
+    (line,) = parse_path("M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0")  # a full circle of radius 10
+    assert all(abs(((x - 12) ** 2 + (y - 12) ** 2) ** 0.5 - 10) < 1e-6 for x, y in line)
+    (line,) = parse_path("M5 12l-2 0l9 -9l9 9h-2v7z")
+    assert line[:4] == [(5, 12), (3, 12), (12, 3), (21, 12)] and line[-1] == (5, 12)

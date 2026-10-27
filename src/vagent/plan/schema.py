@@ -18,6 +18,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from ..render.components import REGISTRY
+from ..render.icons import names as icon_names
 
 ComponentName = Literal[tuple(REGISTRY)]  # type: ignore[valid-type]
 HAN = re.compile(r"[一-鿿]")
@@ -47,11 +48,14 @@ class Storyboard(BaseModel):
     scenes: list[SceneModel] = Field(min_length=3)
 
 
+NOT_SHOWN = ("icon", "icons")  # parameter names whose values are identifiers, never drawn as text
+
+
 def _texts(value) -> list[str]:
     if isinstance(value, str):
         return [value]
     if isinstance(value, dict):
-        return [t for v in value.values() for t in _texts(v)]
+        return [t for k, v in value.items() if k not in NOT_SHOWN for t in _texts(v)]
     if isinstance(value, list):
         return [t for v in value for t in _texts(v)]
     return []
@@ -63,7 +67,7 @@ def _numbers(value) -> list[str]:
         found.append(f"{value:g}")
     elif isinstance(value, dict):
         for key, item in value.items():
-            if key in ("layout", "value_source_sentence"):
+            if key in ("layout", "value_source_sentence", *NOT_SHOWN):
                 continue
             found.extend(_numbers(item))
     elif isinstance(value, list):
@@ -98,6 +102,23 @@ def source_numbers(text: str) -> set[str]:
     for word in re.findall(r"[a-z]+", text.lower()):
         if word in EN_NUMBERS:
             found.add(EN_NUMBERS[word])
+    return found
+
+
+def _icon_names(params) -> list[str]:
+    """Every non-empty icon name in a params tree ("icon" values and "icons" lists)."""
+    found: list[str] = []
+    if isinstance(params, dict):
+        for key, value in params.items():
+            if key == "icon" and isinstance(value, str) and value:
+                found.append(value)
+            elif key == "icons" and isinstance(value, list):
+                found.extend(v for v in value if isinstance(v, str) and v)
+            else:
+                found.extend(_icon_names(value))
+    elif isinstance(params, list):
+        for value in params:
+            found.extend(_icon_names(value))
     return found
 
 
@@ -149,6 +170,11 @@ def problems(board: Storyboard, zh: dict[int, str], en: dict[int, str], timings:
                 if _normal(number) not in stated:
                     out.append(f"{scene.id} params_{lang}: the number {number} does not appear in this scene's "
                                "sentences (data red line: show only numbers stated in the script)")
+            for name in _icon_names(params):
+                if name not in icon_names():
+                    out.append(f"{scene.id} params_{lang}: unknown icon '{name}'; use a name from the icon list or ''")
+            if len(params.get("icons", [])) > len(params.get("items", [])):
+                out.append(f"{scene.id} params_{lang}: more icons than items")
             if scene.component == "bars" and any(item.get("value") is None for item in params["items"]):
                 out.append(f"{scene.id} params_{lang}: bars need a value stated in the script for every item; "
                            "without stated values use another component (bar heights read as data)")
