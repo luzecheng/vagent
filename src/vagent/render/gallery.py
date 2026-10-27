@@ -23,6 +23,11 @@ SAMPLES = {
         "choice_consequence": {"choices": ["定大目标", "等状态好"], "consequence": "结果一拖再拖",
                                "note": "开始的门槛越低越好"},
         "punchline": {"text": "别急着改变整个人生，先选一件小事，从今天开始", "highlight": "从今天开始"},
+        "balance": {"left": {"label": "宏大目标", "icon": "mountain"}, "right": {"label": "每天一小步", "icon": "stairs-up"},
+                    "heavier": "right", "caption": "长期看，小步更有分量"},
+        "cycle": {"steps": ["做一点", "看反馈", "调一调"], "icons": ["pencil", "eye", "adjustments"], "center": "越做越好"},
+        "dialogue": {"lines": [{"who": "other", "text": "每天就读一页，有什么用？"},
+                               {"who": "me", "text": "用处不在当天，而在不间断。"}]},
     },
     "en": {
         "hook": {"text": "Missed goals usually aren't about effort.", "sub": "How many of this year's goals are still alive?", "icon": "target"},
@@ -48,5 +53,11 @@ SAMPLES = {
         "choice_consequence": {"choices": ["Set a huge goal", "Wait for motivation"], "consequence": "It keeps slipping",
                                "note": "Make starting effortless"},
         "punchline": {"text": "Don't overhaul your life. Pick one small thing and start today.", "highlight": "start today"},
+        "balance": {"left": {"label": "Big goals", "icon": "mountain"}, "right": {"label": "Small daily steps", "icon": "stairs-up"},
+                    "heavier": "right", "caption": "Over time, small steps weigh more"},
+        "cycle": {"steps": ["Do a little", "Check", "Adjust"], "icons": ["pencil", "eye", "adjustments"],
+                  "center": "Better each round"},
+        "dialogue": {"lines": [{"who": "other", "text": "One page a day? What's the point?"},
+                               {"who": "me", "text": "The point isn't today. It's never stopping."}]},
     },
 }

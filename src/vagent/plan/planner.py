@@ -9,7 +9,7 @@ from ..render.components import REGISTRY
 from ..render.icons import names as icon_names
 from .schema import Storyboard, problems
 
-PROMPT_VERSION = 5
+PROMPT_VERSION = 6
 
 PURPOSE = {
     "hook": "opening title: the single most striking line, big. ALWAYS the first scene",
@@ -21,12 +21,15 @@ PURPOSE = {
     "bars": "2-5 quantities side by side; ONLY when the script states every value",
     "big_number": "one number stated in the script, very big",
     "quote": "a sentence worth quoting as a quote card",
-    "checklist": "2-5 short parallel items (rules, do's and don'ts)",
+    "checklist": "2-5 short parallel items (rules, do's and don'ts); mode 'ticks' ticks each one off as it is said",
     "strike": "an old/wrong belief crossed out, replaced by the new view",
     "three_things": "exactly three numbered points (first/second/third) revealed one by one",
     "question_stack": "2-5 consecutive questions popping in one by one",
     "choice_consequence": "choices on top, an arrow, and their consequence below",
     "punchline": "the key sentence enlarged, one phrase highlighted in gold",
+    "balance": "two things weighed against each other (a trade-off); the beam tips to the heavier side",
+    "cycle": "3-4 steps that repeat as a loop (do -> check -> adjust -> do again)",
+    "dialogue": "2-4 short spoken lines: a conversation, or the narrator's inner voice ('me')",
 }
 
 SYSTEM = """You are the storyboard planner for a vertical short video (9:16). The voice-over and full
@@ -49,7 +52,9 @@ Rules:
   scenes; leave them out when only a far-fetched metaphor would fit. Use only names from the icon list.
 - Match structure: enumerations ("第一/第二/第三") -> three_things or checklist; several questions in a
   row -> question_stack; "A is a choice, B is a choice, you can't escape the consequence" ->
-  choice_consequence; "you think X, actually Y" -> strike; the thesis sentence -> punchline.
+  choice_consequence; "you think X, actually Y" -> strike; the thesis sentence -> punchline;
+  weighing two sides or a trade-off -> balance; a repeated improve-and-retry process -> cycle;
+  quoted speech or what someone says to themselves -> dialogue; things to check off -> checklist ticks.
 - For list-like components set reveal_on: the sentence id at which each item should appear.
 - Never use the same component three times in a row; use the `layout` variants where available.
 - Typical scene length 4-12 seconds; do not create scenes shorter than about 2.5 seconds.

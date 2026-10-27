@@ -186,7 +186,7 @@ def strokes(name: str) -> tuple[tuple[Point, ...], ...]:
     return tuple(out)
 
 
-def _partial(line: tuple[Point, ...], progress: float) -> list[Point]:
+def partial(line, progress: float) -> list[Point]:
     """The first `progress` fraction of a polyline, by length."""
     if progress >= 1:
         return list(line)
@@ -212,7 +212,7 @@ def draw(c: Canvas, name: str, cx: float, cy: float, size: float, color, progres
     k = size / VIEWBOX
     width = STROKE * k
     for line in strokes(name):
-        pts = [(cx + (x - VIEWBOX / 2) * k, cy + (y - VIEWBOX / 2) * k) for x, y in _partial(line, progress)]
+        pts = [(cx + (x - VIEWBOX / 2) * k, cy + (y - VIEWBOX / 2) * k) for x, y in partial(line, progress)]
         if len(pts) > 1:
             c.line(pts, color, width, alpha, under)
         for px, py in (pts[0], pts[-1]):  # round caps

@@ -77,10 +77,12 @@ def _scene_key(scene: SceneSpec, theme: Theme, variant: Variant, fps: int) -> st
 def render_frame(scene: SceneSpec, t_local: float, theme: Theme, variant: Variant) -> tuple[Image.Image, list]:
     duration = scene.end - scene.start
     canvas = Canvas(variant.width, variant.height, theme.background)
-    ctx = Ctx(theme, variant, duration, [r - scene.start for r in scene.reveals], scene.scale)
+    centre = motion.pivot(variant.content)
+    # lay out in a content area shrunk by the camera push, so the push never carries text past the real edge
+    layout = replace(variant, content=motion.scale_box(variant.content, 1 / (1 + motion.PUSH), centre))
+    ctx = Ctx(theme, layout, duration, [r - scene.start for r in scene.reveals], scene.scale)
     draw(canvas, scene.component, t_local, scene.params, ctx)
     scale, alpha = motion.zoom_alpha(t_local, duration)
-    centre = motion.pivot(variant.content)
     image = motion.transform(canvas.img, scale, centre, variant.width, variant.height, theme.background)
     if alpha < 1.0:
         image = Image.blend(Image.new("RGB", image.size, theme.background), image, max(0.0, alpha))

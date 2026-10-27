@@ -173,8 +173,6 @@ def problems(board: Storyboard, zh: dict[int, str], en: dict[int, str], timings:
             for name in _icon_names(params):
                 if name not in icon_names():
                     out.append(f"{scene.id} params_{lang}: unknown icon '{name}'; use a name from the icon list or ''")
-            if len(params.get("icons", [])) > len(params.get("items", [])):
-                out.append(f"{scene.id} params_{lang}: more icons than items")
             if scene.component == "bars" and any(item.get("value") is None for item in params["items"]):
                 out.append(f"{scene.id} params_{lang}: bars need a value stated in the script for every item; "
                            "without stated values use another component (bar heights read as data)")

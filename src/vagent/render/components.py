@@ -16,7 +16,7 @@ import math
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from . import icons
 from .canvas import Canvas, appear, clamp, ease_out, mix
@@ -54,6 +54,11 @@ def _icon_field():
 
 def _icons_field():
     return Field(default_factory=list, description="optional icon names from the icon list, one per item; [] for none")
+
+
+def _check_icons(entries: list, names: list[str], what: str) -> None:
+    if len(names) > len(entries):
+        raise ValueError(f"more icons than {what} ({len(names)} > {len(entries)})")
 
 
 class Hook(BaseModel):
@@ -134,6 +139,12 @@ class Checklist(BaseModel):
     title: str = ""
     items: list[str] = Field(min_length=2, max_length=5)
     icons: list[str] = _icons_field()
+    mode: Literal["numbered", "ticks"] = Field("numbered", description="'ticks': each item is ticked off as it is said")
+
+    @model_validator(mode="after")
+    def _icons_fit(self):
+        _check_icons(self.items, self.icons, "items")
+        return self
 
 
 class Strike(BaseModel):
@@ -145,6 +156,11 @@ class ThreeThings(BaseModel):
     title: str
     items: list[str] = Field(min_length=3, max_length=3)
     icons: list[str] = _icons_field()
+
+    @model_validator(mode="after")
+    def _icons_fit(self):
+        _check_icons(self.items, self.icons, "items")
+        return self
 
 
 class QuestionStack(BaseModel):
@@ -160,6 +176,38 @@ class ChoiceConsequence(BaseModel):
 class Punchline(BaseModel):
     text: str
     highlight: str = Field("", description="substring of text to colour in the accent colour")
+
+
+class Pan(BaseModel):
+    label: str = Field(description="what lies on this side, 2-8 zh chars / 1-3 en words")
+    icon: str = _icon_field()
+
+
+class Balance(BaseModel):
+    left: Pan
+    right: Pan
+    heavier: Literal["left", "right", "even"] = Field("even", description="the side the beam tips down to")
+    caption: str = ""
+
+
+class Cycle(BaseModel):
+    steps: list[str] = Field(min_length=3, max_length=4, description="steps of the loop, in order, 2-6 zh chars each")
+    icons: list[str] = _icons_field()
+    center: str = Field("", description="optional short label in the middle of the loop")
+
+    @model_validator(mode="after")
+    def _icons_fit(self):
+        _check_icons(self.steps, self.icons, "steps")
+        return self
+
+
+class Speech(BaseModel):
+    who: Literal["me", "other"] = Field(description="'me' = the narrator / inner voice (right), 'other' = left")
+    text: str
+
+
+class Dialogue(BaseModel):
+    lines: list[Speech] = Field(min_length=2, max_length=4)
 
 
 # ---------------------------------------------------------------- helpers
@@ -188,6 +236,10 @@ def _top_for(ctx: Ctx, group_h: float, bias: float = 0.42) -> float:
     """Top y that places a group of height group_h slightly above the content centre."""
     box = ctx.variant.content
     return box.y + max(0.0, (box.h - group_h) * bias)
+
+
+# a slightly uneven tick, in units of the box size, centred on the box
+TICK = ((-0.34, 0.02), (-0.2, 0.15), (-0.06, 0.3), (0.08, 0.1), (0.24, -0.14), (0.4, -0.38))
 
 
 def _draw_on(t: float, t0: float, dur: float = 0.8) -> float:
@@ -439,6 +491,17 @@ def checklist(c: Canvas, t: float, p: Checklist, ctx: Ctx):
     for i, item in enumerate(p.items):
         k, dy = _rise(t, ctx.reveal(i, 0.9), 24)
         row = top + i * step + dy
+        if p.mode == "ticks":
+            # an empty box, then a hand-drawn tick as the item is said
+            c.rect(x + 6, row + 6, 68, 68, r=14, outline=mix(th.background, th.muted, 0.8), width=4, alpha=k)
+            drawn = ease_out((t - ctx.reveal(i, 0.9) - 0.15) / 0.45)
+            if drawn > 0:
+                pts = [(x + 40 + u * 66, row + 40 + v * 66) for u, v in icons.partial(TICK, drawn)]
+                c.line(pts, th.positive, 9, k)
+                c.circle(*pts[0], 4.5, fill=th.positive, alpha=k)
+                c.circle(*pts[-1], 4.5, fill=th.positive, alpha=k)
+            _block_mid(c, ctx, item, "medium", 52, w - 120, step - 20, x + 110, row + 40, th.text, k)
+            continue
         disc = mix(th.background, th.positive, 0.25)
         c.circle(x + 40, row + 40, 38, fill=disc, alpha=k)
         if _icon_at(p.icons, i):
@@ -559,13 +622,137 @@ def punchline(c: Canvas, t: float, p: Punchline, ctx: Ctx):
                th.accent, anchor="lm", alpha=appear(t, landed + 0.3, 0.4), under=marker, record=False)
 
 
+def balance(c: Canvas, t: float, p: Balance, ctx: Ctx):
+    """A beam on a post; each pan drops in with its label, then the beam tips (with a damped swing)."""
+    x, y, w, h, cx, cy = _area(ctx)
+    th = ctx.theme
+    # drawn extent: the raised beam end ~50 px above the pivot down to the base (+post), then the caption
+    group = 520 + (130 if p.caption else 0)
+    pivot_y = _top_for(ctx, group, 0.5) + 50
+    half = w * 0.33
+    post = 470
+    k0 = appear(t, 0.0, 0.5)
+    # post and base
+    c.line([(cx, pivot_y), (cx, pivot_y + post)], mix(th.background, th.muted, 0.9), 10, k0)
+    c.rect(cx - 130, pivot_y + post - 4, 260, 20, r=10, fill=mix(th.background, th.muted, 0.9), alpha=k0)
+    # tilt once both pans are on (screen y grows downwards: a positive angle tips the left end down)
+    target = {"left": 1, "right": -1, "even": 0}[p.heavier] * math.radians(9)
+    u = max(0.0, t - (ctx.reveal(1, 1.0) + 0.5))
+    angle = target * (1 - math.exp(-3.2 * u) * math.cos(7.5 * u)) if u > 0 else 0.0
+    ends = [(cx - half * math.cos(angle), pivot_y + half * math.sin(angle)),
+            (cx + half * math.cos(angle), pivot_y - half * math.sin(angle))]
+    c.line(ends, th.text, 9, k0)
+    c.circle(cx, pivot_y, 16, fill=th.accent, alpha=k0)
+    for i, (pan, (ex, ey)) in enumerate(zip((p.left, p.right), ends)):
+        k, dy = _rise(t, ctx.reveal(i, 1.0), -50)  # drops in from above
+        plate_y = ey + 210 + dy
+        rope = mix(th.background, th.muted, 0.7)
+        c.line([(ex, ey), (ex - 125, plate_y)], rope, 3, k)
+        c.line([(ex, ey), (ex + 125, plate_y)], rope, 3, k)
+        heavy = (p.heavier == "left" and i == 0) or (p.heavier == "right" and i == 1)
+        colour = th.accent if heavy else th.positive
+        c.rect(ex - 140, plate_y - 5, 280, 16, r=8, fill=colour, alpha=k)
+        if pan.icon:
+            icons.draw(c, pan.icon, ex, plate_y - 78, 104, colour, _draw_on(t, ctx.reveal(i, 1.0) + 0.1), k)
+        _block(c, ctx, pan.label, "bold", 50, 260, 130, ex, plate_y + 34, th.text, k, max_lines=2, min_size=28)
+    if p.caption:
+        _block(c, ctx, p.caption, "bold", 54, w, 150, cx, pivot_y + post + 50, th.text,
+               appear(t, ctx.reveal(1, 1.0) + 1.0))
+
+
+def cycle(c: Canvas, t: float, p: Cycle, ctx: Ctx):
+    """Steps on a ring; arrows draw from step to step and close the loop, then a light runs round it."""
+    x, y, w, h, cx, cy = _area(ctx)
+    th = ctx.theme
+    n = len(p.steps)
+    node_r, label_h = 62, 110
+    radius = min(230.0, (h - 2 * (node_r + 20 + label_h)) / 2, w / 2 - 190)
+    ccy = y + h / 2
+    angles = [-math.pi / 2 + 2 * math.pi * i / n for i in range(n)]
+    pos = [(cx + radius * math.cos(a), ccy + radius * math.sin(a)) for a in angles]
+    gap = (node_r + 14) / radius  # arrows stop short of the nodes
+    ring = mix(th.background, th.muted, 0.35)
+    k0 = appear(t, 0.0, 0.5)
+    c.circle(cx, ccy, radius, outline=ring, width=3, alpha=k0)
+    last = ctx.reveal(n - 1, 1.2)
+    for i in range(n):
+        t0 = ctx.reveal(i, 1.2) + 0.3 if i < n - 1 else last + 0.6  # the closing arrow comes last
+        prog = ease_out((t - t0) / 0.6)
+        a0, a1 = angles[i] + gap, angles[i] + 2 * math.pi / n - gap
+        if prog > 0:
+            steps = 24
+            arc = [(cx + radius * math.cos(a0 + (a1 - a0) * j / steps), ccy + radius * math.sin(a0 + (a1 - a0) * j / steps))
+                   for j in range(int(steps * prog) + 1)]
+            if len(arc) > 1:
+                c.line(arc[:-1], th.accent, 6)
+                c.arrow(arc[-2], arc[-1], th.accent, 6, 22)
+    if t > last + 1.2:  # a light circling the closed loop
+        a = angles[0] + (t - last - 1.2) * 1.6
+        c.circle(cx + radius * math.cos(a), ccy + radius * math.sin(a), 11, fill=th.accent, alpha=0.9)
+    current = max([i for i in range(n) if t >= ctx.reveal(i, 1.2)] or [-1])
+    for i, (step, (px, py)) in enumerate(zip(p.steps, pos)):
+        k = appear(t, ctx.reveal(i, 1.2), 0.4)
+        active = i == current
+        fill = mix(th.surface, th.accent, 0.16) if active else th.surface
+        c.circle(px, py, node_r * (0.7 + 0.3 * k), fill=fill, outline=th.accent if active else ring, width=4, alpha=k)
+        if _icon_at(p.icons, i):
+            icons.draw(c, p.icons[i], px, py, 58, th.accent if active else th.text,
+                       _draw_on(t, ctx.reveal(i, 1.2) + 0.1, 0.6), k, fill)
+        else:
+            c.text(px, py, str(i + 1), th.font("black"), 52, th.accent, alpha=k, under=fill, record=False)
+        top_node = abs(py - (ccy - radius)) < 1
+        font = th.font("bold")
+        fitted = c.fit(step, font, 250, label_h, 44 * ctx.scale, min_size=28 * ctx.scale, max_lines=2)
+        label_y = py - node_r - 16 - fitted.height if top_node else py + node_r + 16
+        # a backing chip: side labels sit where the ring and its arrows pass
+        c.rect(px - fitted.width / 2 - 14, label_y - 6, fitted.width + 28, fitted.height + 12, r=14,
+               fill=th.background, alpha=k)
+        c.text_block(fitted, font, px, label_y, th.text if active else th.muted, "center", k)
+    if p.center:
+        _block(c, ctx, p.center, "black", 52, 2 * (radius - node_r) - 40, 140, cx, ccy - 40, th.accent,
+               appear(t, last + 1.0), max_lines=2, min_size=30)
+
+
+def dialogue(c: Canvas, t: float, p: Dialogue, ctx: Ctx):
+    """Chat bubbles popping in turn: 'other' on the left, 'me' (narrator) on the right in the accent colour."""
+    x, y, w, h, cx, cy = _area(ctx)
+    th = ctx.theme
+    font = th.font("bold")
+    avatar, pad, gap = 46, 34, 44
+    bubble_w = w - 2 * avatar - 40
+    fits = [c.fit(line.text, font, bubble_w - 2 * pad, 300, 52 * ctx.scale, min_size=28 * ctx.scale, max_lines=3)
+            for line in p.lines]
+    heights = [f.height + 2 * pad for f in fits]
+    top = _top_for(ctx, sum(heights) + gap * (len(fits) - 1), 0.5)
+    for i, (line, fitted, bh) in enumerate(zip(p.lines, fits, heights)):
+        k, dy = _rise(t, ctx.reveal(i, 1.0), 30)
+        me = line.who == "me"
+        bw = fitted.width + 2 * pad
+        fill = mix(th.background, th.accent, 0.92) if me else th.surface
+        text_colour = th.background if me else th.text
+        row = top + dy
+        av_x = x + w - avatar if me else x + avatar
+        left = av_x - avatar - 20 - bw if me else av_x + avatar + 20
+        c.circle(av_x, row + bh - avatar, avatar, fill=mix(th.background, th.accent if me else th.positive, 0.25),
+                 alpha=k)
+        icons.draw(c, "mood-smile" if me else "user", av_x, row + bh - avatar, 52, th.accent if me else th.positive,
+                   1.0, k, mix(th.background, th.accent if me else th.positive, 0.25))
+        c.rect(left, row, bw, bh, r=30, fill=fill, alpha=k)
+        tail_x = left + bw if me else left  # a small tail pointing at the speaker
+        c.polygon([(tail_x - 20 if me else tail_x + 20, row + bh - 34), (tail_x + 14 if me else tail_x - 14, row + bh - 6),
+                   (tail_x - 34 if me else tail_x + 34, row + bh - 10)], fill, alpha=k)
+        c.text_block(fitted, font, left + pad, row + pad, text_colour, "left", k, under=fill)
+        top += bh + gap
+
+
 REGISTRY = {
     "hook": (hook, Hook), "keyword": (keyword, Keyword), "compare_cards": (compare_cards, CompareCards),
     "trend": (trend, Trend), "short_vs_long": (short_vs_long, ShortVsLong), "timeline": (timeline, Timeline),
     "bars": (bars, Bars), "big_number": (big_number, BigNumber), "quote": (quote, Quote),
     "checklist": (checklist, Checklist), "strike": (strike, Strike), "three_things": (three_things, ThreeThings),
     "question_stack": (question_stack, QuestionStack), "choice_consequence": (choice_consequence, ChoiceConsequence),
-    "punchline": (punchline, Punchline),
+    "punchline": (punchline, Punchline), "balance": (balance, Balance), "cycle": (cycle, Cycle),
+    "dialogue": (dialogue, Dialogue),
 }
 
 
