@@ -67,3 +67,25 @@ def test_mix_without_music_is_voice_only_at_target_loudness(tmp_path):
     pause = audio[int(3.3 * rate):int(4.7 * rate)]
     tail = audio[int(8.5 * rate):]                 # after the voice ends (the end card)
     assert np.max(np.abs(pause)) < 1e-3 and np.max(np.abs(tail)) < 1e-3
+
+
+def test_x_budget_is_stated_up_front_and_a_rejection_says_how_much_to_cut(monkeypatch, tmp_path):
+    # the limit used to be enforced only after the fact, so the model guessed and often ran out of retries
+    from vagent.publish import notes as notes_mod
+
+    def make(post):
+        return Notes(shipinhao_title="标题", shipinhao_description="简介", shipinhao_topics=["a", "b", "c"],
+                     x_post=post, x_hashtags=["Mindset"], cover_title_zh="封面", cover_title_en="Cover")
+
+    seen = {}
+
+    def fake_structured(model_cls, system, user, config, log, validate):
+        seen["prompt"] = system + "\n" + user
+        seen["problems"] = validate(make("word " * 60))
+        return make("Short and sharp.")
+
+    monkeypatch.setattr(notes_mod, "structured", fake_structured)
+    config = {"paths": {"cache": str(tmp_path)}, "llm": {"model": "test"}}
+    notes_mod.draft("中文稿", "English script", {"on": False}, {}, config)
+    assert "280" in seen["prompt"]
+    assert any("cut at least" in p for p in seen["problems"])
