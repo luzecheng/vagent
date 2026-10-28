@@ -261,3 +261,10 @@ def test_spoken_rules_must_be_phrase_to_text(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="zh_spoken.yaml"):
         parse.spoken_text("双十一", "zh")
 
+
+def test_asr_check_ignores_title_marks_and_other_unspoken_punctuation():
+    """《原则》 is read as 原则; title marks and brackets must not count as misread characters."""
+    from vagent.qa.asr import error_rate
+
+    assert error_rate("达利欧在《原则》里提醒过：", "达利欧在原则里提醒过", "zh") == 0
+    assert error_rate("〈原则〉【重点】「注意」『引用』", "原则重点注意引用", "zh") == 0

@@ -12,7 +12,7 @@ import re
 import numpy as np
 from scipy.signal import resample_poly
 
-PUNCT = re.compile(r"[\s，。？！、；：,.?!;:\"'“”‘’…\-—()（）]")
+PUNCT = re.compile(r"[\s，。？！、；：,.?!;:\"'“”‘’…\-—()（）《》〈〉【】「」『』]")
 
 
 @lru_cache(maxsize=2)
@@ -34,7 +34,7 @@ def transcribe(audio: np.ndarray, sr: int, lang: str, size: str = ASR_MODEL) -> 
     return "".join(s.text for s in segments).strip()
 
 
-COMPARE_REV = 2  # bump when normalise / error_rate change: cached check results embed their outcome
+COMPARE_REV = 3  # bump when normalise / error_rate change: cached check results embed their outcome
 ZH_DIGITS = str.maketrans("0123456789", "零一二三四五六七八九")
 
 
