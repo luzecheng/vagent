@@ -175,3 +175,43 @@ def test_icons_must_come_from_the_icon_set():
     scenes = good_scenes()  # an icon name is not on-screen text: its digits are not data
     scenes[2]["params_zh"]["icon"] = scenes[2]["params_en"]["icon"] = "book-2"
     assert problems(board(scenes), ZH, EN, TIMES) == []
+
+
+def test_a_rejected_answer_is_sent_back_for_correction(monkeypatch):
+    """A retry must show the model its own rejected answer, so it fixes the flagged parts instead of
+    drafting a fresh answer that brings new mistakes (seen: storyboards never converging)."""
+    from pydantic import BaseModel
+
+    from vagent.llm import client
+
+    class Answer(BaseModel):
+        words: list[str]
+
+    prompts, replies = [], iter([{"words": ["keep-me", "bad"]}, {"words": ["keep-me", "good"]}])
+
+    def fake_cli(system, user, schema, model, timeout):
+        prompts.append(user)
+        return next(replies)
+
+    monkeypatch.setattr(client, "_call_cli", fake_cli)
+    config = {"llm": {"retries": 3, "model": "m", "timeout_s": 1}}
+    got = client.structured(Answer, "sys", "task", config,
+                            validate=lambda a: ["word 'bad' is not allowed"] if "bad" in a.words else [])
+    assert got.words == ["keep-me", "good"]
+    assert len(prompts) == 2
+    assert '"keep-me"' in prompts[1] and "word 'bad' is not allowed" in prompts[1]
+
+
+def test_an_answer_failing_the_schema_is_also_sent_back(monkeypatch):
+    from pydantic import BaseModel, Field
+
+    from vagent.llm import client
+
+    class Answer(BaseModel):
+        words: list[str] = Field(min_length=2)
+
+    prompts, replies = [], iter([{"words": ["only-one"]}, {"words": ["only-one", "two"]}])
+    monkeypatch.setattr(client, "_call_cli", lambda s, u, *a: prompts.append(u) or next(replies))
+    config = {"llm": {"retries": 3, "model": "m", "timeout_s": 1}}
+    assert client.structured(Answer, "sys", "task", config).words == ["only-one", "two"]
+    assert '"only-one"' in prompts[1]
