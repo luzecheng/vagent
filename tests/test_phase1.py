@@ -232,6 +232,16 @@ def test_a_line_ending_in_a_comma_continues_on_the_next_line():
     assert [s.text for s in parse.split("第一行，\n第二行。\n第三行。").sentences] == ["第一行，第二行。", "第三行。"]
 
 
+def test_a_line_ending_in_a_dash_continues_on_the_next_line():
+    # "变成了——" leads into the next line; voiced alone it ended on a full stop's cadence
+    raw = "从“会什么”，变成了——\n知道要什么。\n另一句。"
+    sentences = parse.split(raw).sentences
+    assert [s.text for s in sentences] == ["从“会什么”，变成了——知道要什么。", "另一句。"]
+    assert parse.spoken_text(sentences[0].text, "zh") == "从会什么，变成了，知道要什么。"
+    for dash in ("—", "--"):
+        assert [s.text for s in parse.split(f"变成了{dash}\n知道要什么。").sentences] == [f"变成了{dash}知道要什么。"]
+
+
 def test_spoken_rules_change_only_what_the_voice_reads(tmp_path, monkeypatch):
     """A phrase the Chinese voice groups wrongly ("双十|一下单") is respelled for the voice only."""
     rules = tmp_path / "zh_spoken.yaml"

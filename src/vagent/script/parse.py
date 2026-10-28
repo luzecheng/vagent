@@ -12,7 +12,7 @@ from ..config import PROJECT
 HAN = re.compile(r"[一-鿿]")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’\-.%$]*")
 END = "。！？；!?;"
-CONTINUES = ("，", "、", ",")   # a line ending in one of these runs on into the next line
+CONTINUES = ("，", "、", ",", "——", "—", "--")   # a line ending in one of these runs on into the next line
 QUOTES = {"“": "", "”": "", "‘": "", "’": "", '"': "", "「": "", "」": "", "『": "", "』": ""}
 ZH_SYMBOLS = re.compile(r"\s*([+＋=＝])\s*")   # Chinese voices skip or garble these, so they are read as words
 ZH_SYMBOL_WORDS = {"+": "加", "＋": "加", "=": "等于", "＝": "等于"}
@@ -67,7 +67,7 @@ def clean(raw: str) -> str:
 def split(raw: str) -> Script:
     """One sentence per terminal punctuation mark; blank lines are paragraph breaks.
 
-    A line break ends a sentence too, unless the line ends in a comma: then the sentence continues on the
+    A line break ends a sentence too, unless the line ends in a comma or a dash: then the sentence continues on the
     next line and is voiced in one take (voicing the clause alone gives it a final, cut-off cadence).
     """
     text = clean(raw)
