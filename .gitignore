@@ -11,6 +11,7 @@ __pycache__/
 .DS_Store
 # personal: this machine's settings, your own scripts, backups
 config/local.yaml
+config/zh_spoken.yaml
 scripts/
 *.bak_*
 engines/*.log

@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 import re
+
+import yaml
+
+from ..config import PROJECT
 
 HAN = re.compile(r"[一-鿿]")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’\-.%$]*")
@@ -15,6 +20,10 @@ ZH_ACRONYM = re.compile(r"(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])")  # read as one w
 ZH_YEAR = re.compile(r"(?<!\d)(\d{4})\s*年")  # a year is said digit by digit, not as a cardinal number
 ZH_DIGITS = dict(zip("0123456789", "零一二三四五六七八九"))
 ZH_DASH = re.compile(r"\s*(?:——|—|--)\s*")   # a dash is a pause, not a syllable (a hyphen as in 2020-2021 stays)
+# This machine's respellings for the Chinese voice ("phrase: what to say"), e.g. a comma where the voice groups
+# characters wrongly. Personal (git-ignored); missing means no rules.
+SPOKEN_FILE = PROJECT / "config/zh_spoken.yaml"
+_spoken_cache: dict = {}
 
 
 @dataclass
@@ -89,12 +98,38 @@ def split(raw: str) -> Script:
     return script
 
 
+def _zh_rules() -> list[tuple[str, str]]:
+    """Rules from SPOKEN_FILE, longest phrase first; reread whenever the file changes."""
+    path = Path(SPOKEN_FILE)
+    try:
+        stamp = path.stat().st_mtime_ns
+    except FileNotFoundError:
+        return []
+    if _spoken_cache.get("key") != (path, stamp):
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+            raise ValueError(f"{path.name}: every line must be `phrase: what to say` (both text)")
+        _spoken_cache.update(key=(path, stamp), rules=sorted(data.items(), key=lambda kv: -len(kv[0])))
+    return _spoken_cache["rules"]
+
+
+def _respell(text: str, rules: list[tuple[str, str]]) -> str:
+    """Apply the rules in one left-to-right pass, longest match first, so a replacement is never rewritten."""
+    if not rules:
+        return text
+    pattern = re.compile("|".join(re.escape(phrase) for phrase, _ in rules))
+    lookup = dict(rules)
+    return pattern.sub(lambda m: lookup[m.group()], text)
+
+
 def spoken_text(text: str, lang: str) -> str:
-    """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, + and = spelled out,
-    dashes read as a pause, capital-letter acronyms spelled letter by letter and years read digit by digit."""
+    """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, this machine's respellings
+    (SPOKEN_FILE) applied, + and = spelled out, dashes read as a pause, capital-letter acronyms spelled letter
+    by letter and years read digit by digit. Subtitles keep the author's text."""
     for mark, repl in QUOTES.items():
         text = text.replace(mark, repl)
     if lang == "zh":
+        text = _respell(text, _zh_rules())
         text = ZH_SYMBOLS.sub(lambda m: ZH_SYMBOL_WORDS[m.group(1)], text)
         text = ZH_DASH.sub("，", text)
         text = ZH_ACRONYM.sub(lambda m: " ".join(m.group()), text)

@@ -258,8 +258,9 @@ def markdown(data: dict, title: str) -> str:
         for row in result["flagged"]:
             lines.append(f"    - 第 {row['id']} 句（{row['error_rate']:.0%}）原文“{row['text']}” / 听到“{row['heard']}”")
     if any(r.get("flagged") for r in data["asr"].values()):
-        lines += ["", "Whisper 自己也会写错同音字，被标出的句子不一定真的读错。若确实读错，可在 "
-                      "`config/zh_pronunciation.yaml` 里指定读音后重跑。"]
+        lines += ["", "Whisper 自己也会写错同音字，被标出的句子不一定真的读错。若确实读错或断句不对，可在 "
+                      "`config/zh_spoken.yaml` 写一行“原文: 读法”（例如加逗号断句，字幕不变）后重跑；"
+                      "用 Kokoro 中文音色时，也可在 `config/zh_pronunciation.yaml` 指定拼音。"]
     lines.append("")
 
     d = data["disclaimer"]

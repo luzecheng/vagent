@@ -230,3 +230,34 @@ def test_a_line_ending_in_a_comma_continues_on_the_next_line():
     assert texts == ["开头一句。", "没有必要通过一个住址，向谁证明自己过得好。", "我们生活中有多少选择，都像租房一样？",
                      "我给自己写下一条原则：", "做一个超级现实的人。"]
     assert [s.text for s in parse.split("第一行，\n第二行。\n第三行。").sentences] == ["第一行，第二行。", "第三行。"]
+
+
+def test_spoken_rules_change_only_what_the_voice_reads(tmp_path, monkeypatch):
+    """A phrase the Chinese voice groups wrongly ("双十|一下单") is respelled for the voice only."""
+    rules = tmp_path / "zh_spoken.yaml"
+    rules.write_text("双十一下单: 双十一，下单\n十一: 十 一\n", encoding="utf-8")
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    assert parse.spoken_text("双十一下单前，先想一想", "zh") == "双十一，下单前，先想一想"  # longest rule wins
+    assert parse.spoken_text("十一月", "zh") == "十 一月"
+    assert parse.spoken_text("Double 11 双十一下单", "en") == "Double 11 双十一下单"
+    script = parse.split("双十一下单前，先想一想。")
+    assert script.sentences[0].text.startswith("双十一下单前")  # subtitles keep the author's text
+
+
+def test_spoken_rules_file_is_optional_and_reread_when_edited(tmp_path, monkeypatch):
+    rules = tmp_path / "zh_spoken.yaml"
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    assert parse.spoken_text("双十一下单", "zh") == "双十一下单"
+    rules.write_text("# comment only\n", encoding="utf-8")
+    assert parse.spoken_text("双十一下单", "zh") == "双十一下单"
+    rules.write_text("双十一下单: 双十一，下单\n", encoding="utf-8")
+    assert parse.spoken_text("双十一下单", "zh") == "双十一，下单"
+
+
+def test_spoken_rules_must_be_phrase_to_text(tmp_path, monkeypatch):
+    rules = tmp_path / "zh_spoken.yaml"
+    rules.write_text("- 双十一\n", encoding="utf-8")
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    with pytest.raises(ValueError, match="zh_spoken.yaml"):
+        parse.spoken_text("双十一", "zh")
+
