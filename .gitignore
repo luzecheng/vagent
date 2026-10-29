@@ -15,3 +15,9 @@ config/zh_spoken.yaml
 scripts/
 *.bak_*
 engines/*.log
+# Voice prompts are personal recordings; only the neutral sample ships with the repo.
+engines/prompts/*
+!engines/prompts/male_ref.wav
+!engines/prompts/male_ref.txt
+# Story episodes hold the user's own scripts and renders: never published.
+story/episodes/
