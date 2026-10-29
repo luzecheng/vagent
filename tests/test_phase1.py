@@ -287,3 +287,13 @@ def test_asr_check_treats_words_that_sound_the_same_as_equal():
     assert error_rate("小猫醒了，它慢慢地走到窗边。", "小猫醒了他慢慢的走到窗边", "zh") == 0
     assert error_rate("她跑得很快", "他跑的很快", "zh") == 0
     assert error_rate("它走到窗边", "我走到窗边", "zh") > 0       # a different word is still caught
+
+
+def test_asr_check_ignores_hyphens_and_digit_spelling_in_english():
+    """'first-order' heard as 'first order', or 'Two' written as '2', is the same speech, not a misreading."""
+    from vagent.qa.asr import error_rate
+
+    assert error_rate("Second-order effects show up later.", "Second order effects show up later.", "en") == 0
+    assert error_rate("Two: ask yourself.", "2. Ask yourself.", "en") == 0
+    assert error_rate("Spend-and-save deals", "Spend and save deals", "en") == 0
+    assert error_rate("Two cats", "Three cats", "en") > 0

@@ -34,7 +34,7 @@ def transcribe(audio: np.ndarray, sr: int, lang: str, size: str = ASR_MODEL) -> 
     return "".join(s.text for s in segments).strip()
 
 
-COMPARE_REV = 4  # bump when normalise / error_rate change: cached check results embed their outcome
+COMPARE_REV = 5  # bump when normalise / error_rate change: cached check results embed their outcome
 ZH_DIGITS = str.maketrans("0123456789", "零一二三四五六七八九")
 # characters that sound the same: Whisper picks one of them at random, so they compare equal
 ZH_HOMOPHONES = str.maketrans("她它祂地得", "他他他的的")
@@ -54,10 +54,15 @@ def normalise(text: str, lang: str) -> str:
     return text.lower()
 
 
+EN_NUMBERS = dict(enumerate("zero one two three four five six seven eight nine ten eleven twelve".split()))
+
+
 def _tokens(text: str, lang: str) -> list[str]:
     if lang == "zh":
         return list(normalise(text, lang))
-    return [w for w in (PUNCT.sub("", word) for word in text.lower().split()) if w]
+    words = re.sub(r"[-‐–—]", " ", text.lower()).split()      # "first-order" is said as two words
+    words = [w for w in (PUNCT.sub("", word) for word in words) if w]
+    return [EN_NUMBERS.get(int(w), w) if w.isdigit() and int(w) in EN_NUMBERS else w for w in words]
 
 
 def error_rate(reference: str, hypothesis: str, lang: str) -> float:
