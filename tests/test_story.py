@@ -36,3 +36,21 @@ def test_long_english_lines_become_shorter_subtitles():
     assert all(len(s["text"]) <= 48 for s in subs), [s["text"] for s in subs]
     assert " ".join(s["text"] for s in subs).replace(",", "") == text.rstrip(".").replace(",", "")
     assert all(a["end"] <= b["start"] for a, b in zip(subs, subs[1:]))
+
+
+def test_wrap_breaks_where_a_reader_pauses():
+    """Two-row Chinese subtitles break at a pause or before a quote, never inside a number word like 双十一."""
+    cr, size, max_w = _ctx(), 58, 1080 * 0.76
+    rows = wrap(cr, "这件外套是我去年双十一在网上买的", size, max_w)
+    assert any("双十一" in r for r in rows), rows
+    rows = wrap(cr, "你的书架上哪本书经得起这句“再读一遍”？", size, max_w)
+    assert len(rows) == 1 or rows[1].startswith("“") or rows[0].endswith("，"), rows
+
+
+def test_english_colons_do_not_cut_a_sentence():
+    """'Two: ask yourself...' is one spoken sentence; cutting at the colon voices 'Two:' alone."""
+    from story.narrate import sentence_spans
+
+    text = "So try three things. One: ask yourself, would I buy it at full price? Two: wait a day."
+    pieces = [text[a:b].strip() for a, b in sentence_spans(text, "en")]
+    assert pieces == ["So try three things.", "One: ask yourself, would I buy it at full price?", "Two: wait a day."]

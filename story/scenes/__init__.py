@@ -16,7 +16,7 @@ from importlib import import_module
 
 NAMES = ["walk", "look_up", "stumble", "loop_path", "cloud", "constellation", "forecast", "companions",
          "pass_lamp", "reflect_light", "question", "writing", "signpost", "face_camera",
-         "spiral", "cycle5", "gears", "fork", "mirror", "council", "wall"]
+         "spiral", "cycle5", "gears", "fork", "mirror", "council", "wall", "cart", "countdown"]
 
 
 def get(name: str):

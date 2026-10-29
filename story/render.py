@@ -1,6 +1,6 @@
 """Render a storyboard into story-style videos: 1920×1080 landscape and 1080×1920 portrait.
 
-    .venv/bin/python -m story.render <episode folder or storyboard.json> [--only landscape|portrait]
+    .venv/bin/python -m story.render <episode folder or storyboard.json> [--portrait | --only landscape|portrait]
                                      [--preview] [--stills]
 
 Steps: narration (vagent TTS, your configured voice) -> shot timeline from the real audio -> soft music mix
@@ -197,19 +197,30 @@ class Film:
         cr.set_source(shade)
         cr.paint()
         cx = st.W / 2 if not portrait else st.W * 0.46
-        rows, size = quote_lines(cr, cover["title"], st.W * (0.78 if portrait else 0.8), (128 if portrait else 120) * u)
-        y = st.H * (0.27 if portrait else 0.30) - (len(rows) - 1) * size * 0.65
+        max_w = st.W * (0.78 if portrait else 0.8)
+        sub, sub_size, sub_rows = cover.get("subtitle", ""), (48 if portrait else 44) * u, []
+        if sub:
+            sub_rows = [sub]
+            if text_width(cr, sub, sub_size) > max_w:
+                sub_rows = [r.strip() for r in sub.split("·")] if "·" in sub else wrap(cr, sub, sub_size, max_w)
+        # the text block sits above the hero's head and inside the safe area; a title too tall for that
+        # space is set smaller
+        head_top = st.horizon - 250 * st.s - 30 * u
+        min_top = st.H * (0.12 if portrait else 0.06)
+        size = (128 if portrait else 120) * u
+        while True:
+            rows, size = quote_lines(cr, cover["title"], max_w, size)
+            height = len(rows) * size * 1.3 + (20 * u + len(sub_rows) * sub_size * 1.45 if sub_rows else 0)
+            if head_top - height >= min_top or size < 60 * u:
+                break
+            size *= 0.92
+        top = max(min_top, min(st.H * (0.20 if portrait else 0.22), head_top - height))
         for n, row in enumerate(rows):
-            text(cr, row, size, cx, y + n * size * 1.3, GOLD, a=a, weight=cairo.FONT_WEIGHT_BOLD, glow=a)
-        if cover.get("subtitle"):
-            sub_size = (48 if portrait else 44) * u
-            sub_y = y + len(rows) * size * 1.3 + 20 * u
-            sub_rows = [cover["subtitle"]]
-            if text_width(cr, cover["subtitle"], sub_size) > st.W * (0.76 if portrait else 0.8):
-                sub_rows = [r.strip() for r in cover["subtitle"].split("·")] if "·" in cover["subtitle"] else \
-                    wrap(cr, cover["subtitle"], sub_size, st.W * (0.76 if portrait else 0.8))
-            for n, row in enumerate(sub_rows):
-                text(cr, row, sub_size, cx, sub_y + n * sub_size * 1.45, WHITE, a=a * 0.9)
+            text(cr, row, size, cx, top + size * 0.65 + n * size * 1.3, GOLD, a=a, weight=cairo.FONT_WEIGHT_BOLD,
+                 glow=a)
+        sub_top = top + len(rows) * size * 1.3 + 20 * u
+        for n, row in enumerate(sub_rows):
+            text(cr, row, sub_size, cx, sub_top + sub_size * 0.7 + n * sub_size * 1.45, WHITE, a=a * 0.9)
 
     def _overlays(self, cr, i, t):
         st, shot = self.st, self.shots[i]
@@ -311,10 +322,26 @@ def _greedy(cr, s, size, width, points):
     return [r for r in rows if r]
 
 
+NUMERALS = "零一二三四五六七八九十百千万亿两双第0123456789"
+PAUSE_AFTER = "，、；：。？！ ,;:"
+PAUSE_BEFORE = "“《「（"
+
+
 def wrap(cr, s, size, max_w):
-    """Break a subtitle into rows that each fit max_w, as evenly filled as the row count allows."""
-    points = _break_points(s)
+    """Break a subtitle into rows that each fit max_w, as evenly filled as the row count allows.  Two rows break
+    where a reader would pause (after punctuation, before a quote) when that keeps both rows fitting."""
+    points = [k for k in _break_points(s) if not (s[k - 1] in NUMERALS and s[k] in NUMERALS)]  # keep 双十一 whole
     rows = _greedy(cr, s, size, max_w, points)
+    if len(rows) == 2:
+        fitting = [k for k in points
+                   if text_width(cr, s[:k].strip(), size) <= max_w and text_width(cr, s[k:].strip(), size) <= max_w]
+        if fitting:
+            def cost(k):
+                widest = max(text_width(cr, s[:k].strip(), size), text_width(cr, s[k:].strip(), size))
+                natural = s[k - 1] in PAUSE_AFTER or s[k] in PAUSE_BEFORE
+                return widest + (0 if natural else 0.25 * max_w)
+            k = min(fitting, key=cost)
+            return [s[:k].strip(), s[k:].strip()]
     width = max_w
     while width > max_w * 0.5:           # narrow the target while the row count stays: balanced rows
         trial = _greedy(cr, s, size, width * 0.96, points)
@@ -337,7 +364,7 @@ def quote_lines(cr, q, max_w, size):
     """The quote on one line if it fits, else broken at its comma; shrunk if it still doesn't fit."""
     rows = [q]
     if text_width(cr, q, size, cairo.FONT_WEIGHT_BOLD) > max_w:
-        for mark in ("，", ", "):
+        for mark in ("，", "：", ": ", ", "):
             if mark in q:
                 head, _, tail = q.partition(mark)
                 rows = [head + mark.strip(), tail]
@@ -423,7 +450,8 @@ def load(path: Path) -> tuple[Path, dict]:
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="story.render", description=__doc__.splitlines()[0])
     ap.add_argument("episode", type=Path)
-    ap.add_argument("--only", choices=list(FORMATS))
+    ap.add_argument("--portrait", action="store_true", help="also render 1080x1920 (default: landscape only)")
+    ap.add_argument("--only", choices=list(FORMATS), help="render just this format")
     ap.add_argument("--lang", choices=["zh", "en", "all"], default="all",
                     help="all (default): Chinese, plus English when every shot has narration_en")
     ap.add_argument("--draft", action="store_true", help="contact sheets from estimated timing, no TTS (seconds)")
@@ -453,7 +481,7 @@ def render_language(folder: Path, sb: dict, lang: str, args) -> None:
     build.mkdir(exist_ok=True)
     tag = "" if lang == "zh" else f"_{lang}"
     seed = zlib.crc32(sb.get("title", "").encode())
-    formats = [args.only] if args.only else list(FORMATS)
+    formats = [args.only] if args.only else (list(FORMATS) if args.portrait else ["landscape"])
     print(f"--- {lang}", flush=True)
 
     audio, timeline = narration.narrate(sb, config, log=lambda m: print(m, flush=True), draft=args.draft, lang=lang)

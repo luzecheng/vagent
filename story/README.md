@@ -2,7 +2,7 @@
 
 One Chinese script becomes a story-style animated video: 「一笔」, a figure drawn in glowing white lines with a
 gold point of light in the chest, walks through night mountains, meets something on the way, and learns one
-principle from it. Output is 1920×1080 landscape and 1080×1920 portrait, with the configured voice, soft music,
+principle from it. Output is 1920×1080 landscape (add `--portrait` for 1080×1920 too), with the configured voice, soft music,
 subtitles and 1–2 gold quote shots. Nothing is uploaded or published.
 
 ```
@@ -18,9 +18,9 @@ story/
 
 1. Make a folder, e.g. `output/2026-10-29_<name>/`, and write `storyboard.json` there (format below).
 2. `.venv/bin/python -m story.render <folder> --draft` — contact sheets with estimated timing, no TTS
-   (`draft_landscape.png`, `draft_portrait.png`): show these with the storyboard table and get it confirmed.
+   (`draft_landscape.png`; with `--portrait` also `draft_portrait.png`): show these with the storyboard table and get it confirmed.
 3. `.venv/bin/python -m story.render <folder>` — narration, listening check (`qa.md`), music, both videos
-   (`story_landscape.mp4`, `story_portrait.mp4`), contact sheets, `timeline.json`. TTS is the slow part
+   (`story_landscape.mp4`, and `story_portrait.mp4` with `--portrait`), contact sheets, `timeline.json`. TTS is the slow part
    (cached per sentence, so a rerun after a visual change takes about two minutes).
 
 ## storyboard.json
