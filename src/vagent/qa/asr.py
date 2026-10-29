@@ -34,8 +34,10 @@ def transcribe(audio: np.ndarray, sr: int, lang: str, size: str = ASR_MODEL) -> 
     return "".join(s.text for s in segments).strip()
 
 
-COMPARE_REV = 3  # bump when normalise / error_rate change: cached check results embed their outcome
+COMPARE_REV = 4  # bump when normalise / error_rate change: cached check results embed their outcome
 ZH_DIGITS = str.maketrans("0123456789", "零一二三四五六七八九")
+# characters that sound the same: Whisper picks one of them at random, so they compare equal
+ZH_HOMOPHONES = str.maketrans("她它祂地得", "他他他的的")
 
 
 def normalise(text: str, lang: str) -> str:
@@ -48,7 +50,7 @@ def normalise(text: str, lang: str) -> str:
         except ImportError:
             pass
         # digits and Chinese numerals compare equal digit for digit (Whisper writes "一九八二年" as "1982年")
-        text = text.translate(ZH_DIGITS)
+        text = text.translate(ZH_DIGITS).translate(ZH_HOMOPHONES)
     return text.lower()
 
 

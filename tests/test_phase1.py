@@ -278,3 +278,12 @@ def test_asr_check_ignores_title_marks_and_other_unspoken_punctuation():
 
     assert error_rate("达利欧在《原则》里提醒过：", "达利欧在原则里提醒过", "zh") == 0
     assert error_rate("〈原则〉【重点】「注意」『引用』", "原则重点注意引用", "zh") == 0
+
+
+def test_asr_check_treats_words_that_sound_the_same_as_equal():
+    """他/她/它 and 的/地/得 sound identical; Whisper's choice between them is not a misreading."""
+    from vagent.qa.asr import error_rate
+
+    assert error_rate("小猫醒了，它慢慢地走到窗边。", "小猫醒了他慢慢的走到窗边", "zh") == 0
+    assert error_rate("她跑得很快", "他跑的很快", "zh") == 0
+    assert error_rate("它走到窗边", "我走到窗边", "zh") > 0       # a different word is still caught
