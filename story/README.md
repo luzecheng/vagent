@@ -44,6 +44,7 @@ story/
 - `narration`: the script's own words. Joined in order, the shots must equal the script exactly (whitespace
   aside); `render` checks this against `script` and stops on any difference. Split anywhere, even mid-sentence:
   a sentence is still spoken as one sentence and the cut lands where the voice reaches that word.
+  A narration ending in a line break (`"阻碍财富积累的几个习惯\n"`, a title line with no full stop) ends its sentence there.
 - `act`: shots in the same act follow each other with a sentence pause, a new act gets a longer pause.
 - `quote` (optional, 1–2 per video): gold glowing words, fading in as the voice says them; use words that
   appear in that shot's narration, so they come in on time.
@@ -62,7 +63,9 @@ story/
 - One principle per video; the hero meets something on the journey and learns from it. Story, not slides.
 - Each shot: one action that shows its narration. Keep a prop running through the video (the stone, the lamp)
   so it reads as one journey.
-- Pace: about 3–7 seconds per shot; a shot with a lot of narration (over ~10 s) may be split in two shots.
+- Pace: about 3–7 seconds per shot. A line shorter than its scene's action (e.g. "可你得问问自己：" on `mirror`) makes the
+  voice wait in silence for the picture; `render` lists every such wait over 0.6 s: merge that line with a
+  neighbouring shot. A shot with a lot of narration (over ~10 s) may be split in two shots.
 - The camera moves on its own between shots (looking up to the sky, back down, pulling back): order shots so
   sky shots sit together, to avoid the camera going up and down repeatedly.
 - Don't copy the official 《原则》 animation (no pointed hat, no backpack traveler, none of its shots).
@@ -92,6 +95,8 @@ story/
 | `question` | 问号 | one question mark breaks, a second lights up | |
 | `writing` | 写字 | kneels and writes on a sheet | |
 | `signpost` | 插路牌 | plants a glowing signpost by the stone (a rule) | |
+| `strike` | 划掉旧观点 | an old belief in the sky is struck out in red and sinks; the new view rises in gold | `old`, `new` (+ `old_en`, `new_en`) |
+| `ring_meet` | 圆环相遇 | two lights leave one point on a ring in opposite directions and meet at the top | `labels` (+`labels_en`), `meet` (+`meet_en`), `until` (0.5: only out to the sides) |
 | `face_camera` | 转身 | turns to face the viewer, lamp alight (closing question) | `zoom` |
 
 A new scene is one file in `scenes/` with `TITLE`, `MIN_S`, `camera`, `hero`, `draw` (and optionally `speed`,

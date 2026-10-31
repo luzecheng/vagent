@@ -26,7 +26,7 @@ from . import scenes
 LEAD_IN = 1.6      # seconds of walking before the first word
 TAIL = 1.8         # after the last word (plus the last shot's `hold`), before the end
 VISUAL_LEAD = 0.25 # a shot starts this long before its first word, so the picture leads the voice
-SENTENCE_END = {"zh": re.compile(r"[。！？!?；;：:…]+[”’」』）)]*"),
+SENTENCE_END = {"zh": re.compile(r"[。！？!?；;：:…]+[”’」』）)]*\n?|\n"),
                 "en": re.compile(r"[.!?…]+[\"'”’)]*(?=\s|$)")}   # an English colon or semicolon is a pause
 CLAUSE = {"zh": re.compile(r"[，、,；;：:。！？!?…]+[”’」』）)]*"),
           "en": re.compile(r"[,;:.!?…—]+[\"'”’)]*(?=\s|$)")}
@@ -62,8 +62,10 @@ def _pause(sentence: str, pauses: dict, paragraph: bool) -> float:
 
 
 def check_script(storyboard: dict, script_text: str) -> None:
-    """The narration must be the script, word for word and in order: shots only split it, never edit it."""
+    """The narration must be the script, word for word and in order: shots only split it, never edit it.
+    Lines that are only a 【heading】 are for the reader and are not spoken."""
     flat = lambda s: re.sub(r"\s+", "", s)
+    script_text = re.sub(r"^[ \t]*【[^】\n]*】[ \t]*$", "", script_text, flags=re.M)
     said, wrote = flat("".join(s["narration"] for s in storyboard["shots"])), flat(script_text)
     if said == wrote:
         return
@@ -80,6 +82,30 @@ def _draft_speech(text: str, lang: str) -> Speech:
                   False, engine="draft")
 
 
+def shot_texts(shots: list[dict], lang: str = "zh") -> list[str]:
+    """Each shot's narration as it is joined into the full text.  A narration that ends with a line break (a title
+    line with no full stop) keeps it, and the line break ends the sentence there."""
+    joiner = "" if lang == "zh" else " "
+    field = FIELDS[lang][0]
+    out = []
+    for i, s in enumerate(shots):
+        t = s[field].strip()
+        if s[field].rstrip(" \t").endswith("\n"):
+            t += "\n"
+        out.append(t + (joiner if i + 1 < len(shots) else ""))
+    return out
+
+
+WAIT_LIMIT = 0.6   # seconds of extra silence after a shot that start to sound like the voice stalled
+
+
+def waits(timeline: dict, limit: float = WAIT_LIMIT) -> list[dict]:
+    """Shots after which the voice falls silent, beyond the normal pause, while their picture finishes (the line is
+    shorter than the scene's action).  A shot held on purpose (`hold`) is not counted."""
+    return [{"id": t["id"], "narration": t["narration"], "scene": t["scene"], "wait_s": t["wait_s"]}
+            for t in timeline["shots"][:-1] if t.get("wait_s", 0) > limit + float(t.get("hold", 0))]
+
+
 def has_lang(storyboard: dict, lang: str) -> bool:
     return all(s.get(FIELDS[lang][0], "").strip() for s in storyboard["shots"])
 
@@ -89,8 +115,7 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
     """Return (mono voice track at vagent's SR, timeline).  draft=True: no TTS, estimated timing, silent track."""
     shots = storyboard["shots"]
     field, quote_field = FIELDS[lang]
-    joiner = "" if lang == "zh" else " "
-    texts = [s[field].strip() + (joiner if i + 1 < len(shots) else "") for i, s in enumerate(shots)]
+    texts = shot_texts(shots, lang)
     full = "".join(texts)
     bounds, pos = [], 0                    # each shot's [start, end) character span in `full`
     for t in texts:
@@ -104,6 +129,7 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
     cache = cachemod.Cache(config["paths"]["cache"], f"tts/{lang}")
     spoken_sentences = []                   # (script text, audio) per sentence, for the listening check
     pauses = config["tts"]["pause_s"]
+    waited = {}                             # shot index -> silence added after it for its picture to finish
 
     pieces = [np.zeros(int(LEAD_IN * SR), np.float32)]
     cursor = LEAD_IN
@@ -133,7 +159,9 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
             if i_next != i_now:             # a shot ends here: give its action the time it needs
                 begun = LEAD_IN if i_now == 0 else char_time[bounds[i_now][0]] - VISUAL_LEAD
                 need = scenes.get(shots[i_now]["scene"]).MIN_S + float(shots[i_now].get("hold", 0))
+                natural = gap
                 gap = max(gap, begun + need + VISUAL_LEAD - cursor)
+                waited[i_now] = gap - natural
             pieces.append(np.zeros(int(gap * SR), np.float32))
             cursor += gap
     last = shots[-1]
@@ -146,7 +174,8 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
     for i, s in enumerate(shots):
         a, b = bounds[i]
         start = 0.0 if i == 0 else char_time[a] - VISUAL_LEAD
-        timeline.append({**s, "start": round(start, 3), "voice_end": round(char_time[b], 3)})
+        timeline.append({**s, "start": round(start, 3), "voice_end": round(char_time[b], 3),
+                         "wait_s": round(waited.get(i, 0.0), 2)})
     for i, t in enumerate(timeline):
         t["end"] = timeline[i + 1]["start"] if i + 1 < len(timeline) else round(duration, 3)
         a, b = bounds[i]
@@ -182,7 +211,7 @@ def _subtitles(full, a, b, char_time, last_end, lang="zh"):
         if m.end() > start:
             chunks.append((start, m.end()))
             start = m.end()
-    if start < b:
+    if full[start:b].strip():                  # not just the space that joins English shots
         chunks.append((start, b))
     merged = []
     for c in chunks:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from ..stage import GOLD, WHITE, glow_dot, line, partial, ramp, text
+from ..stage import GOLD, WHITE, glow_dot, line, partial, ramp, text, text_width
 
 TITLE = "星座连线"
 MIN_S = 3.0
@@ -50,16 +50,25 @@ def _shape(name):
     return []
 
 
+def _layout(cr, st, figures):
+    """(size, x centre of each figure): shapes get a fixed slot, words a slot as wide as the word itself."""
+    def slot(f):                                                       # width in units of `size`
+        if _shape(f):
+            return 1.2 if f in ("+", "=") else 2.2
+        return text_width(cr, f, 90) / 100 + 0.8                       # words are drawn at 0.9 × size
+    slots = [slot(f) for f in figures]
+    size = min(st.W * 0.92 / sum(slots), 150 * st.u)
+    left = st.W / 2 - sum(slots) * size / 2
+    return size, [left + (sum(slots[:i]) + slots[i] / 2) * size for i in range(len(figures))]
+
+
 def draw(cr, st, p, d, a, params):
     figures = params.get("figures", ["crack", "+", "lamp", "=", "spiral"])
     n = len(figures)
-    small_sign = lambda f: f in ("+", "=")
-    slots = [1.2 if small_sign(f) else 2.2 for f in figures]          # widths in units of `size`
-    size = min(st.W * 0.92 / sum(slots), 150 * st.u)
+    size, centers = _layout(cr, st, figures)
     cy = st.H * (0.42 if not st.portrait else 0.40)
-    left = st.W / 2 - sum(slots) * size / 2
     for i, name in enumerate(figures):
-        cx = left + (sum(slots[:i]) + slots[i] / 2) * size
+        cx = centers[i]
         start, end = 0.05 + 0.75 * i / n, 0.05 + 0.75 * (i + 1) / n
         k = ramp(p, start, end)
         small = name in ("+", "=")

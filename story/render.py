@@ -489,6 +489,10 @@ def render_language(folder: Path, sb: dict, lang: str, args) -> None:
     key = "" if lang == "zh" else f"_{lang}"
     timeline["cover"] = {"title": sb.get(f"cover_title{key}", sb.get(f"title{key}", "")),
                          "subtitle": sb.get(f"cover_subtitle{key}", "")}
+    for w in narration.waits(timeline):
+        print(f"  wait {w['wait_s']:.1f}s after shot {w['id']} ({w['scene']}): {w['narration']}  "
+              "-> the line is shorter than the picture: merge it with a neighbouring shot or pick a quicker scene",
+              flush=True)
     if args.draft:
         for name in formats:
             out = folder / f"draft{tag}_{name}.png"
