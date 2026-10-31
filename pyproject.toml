@@ -14,6 +14,7 @@ dependencies = ["kokoro-onnx", "misaki[zh]", "soundfile", "numpy", "scipy", "pil
 
 [project.optional-dependencies]
 asr = ["faster-whisper"]
+youtube = ["google-api-python-client", "google-auth-oauthlib"]
 test = ["pytest"]
 
 [project.scripts]

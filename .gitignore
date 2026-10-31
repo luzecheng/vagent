@@ -12,6 +12,8 @@ __pycache__/
 # personal: this machine's settings, your own scripts, backups
 config/local.yaml
 config/zh_spoken.yaml
+config/youtube_client_secret.json
+config/youtube_token.json
 scripts/
 *.bak_*
 engines/*.log
