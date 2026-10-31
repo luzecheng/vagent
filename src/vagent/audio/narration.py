@@ -40,20 +40,44 @@ def _synth_cached(provider, text: str, lang: str, voice: str, speed: float, cach
     wav = cache.path(digest, ".wav")
     if meta and wav.exists():
         audio, _ = sf.read(wav, dtype="float32")
-        return Speech(audio, [Unit(**u) for u in meta["units"]], meta["exact"], meta["engine"], meta["notes"])
+        speech = Speech(audio, [Unit(**u) for u in meta["units"]], meta["exact"], meta["engine"], meta["notes"])
+        if speech.exact or meta.get("align_rev") == _align_rev():
+            return speech
+        # aligned by an older version: re-time the cached audio (the voice itself stays as it is)
+        speech.notes = [n for n in speech.notes if not n.startswith("Whisper-aligned")]
+        _align(speech, text, lang)
+        _store(cache, digest, speech)
+        return speech
     speech = provider.synth(text, lang, voice, speed)
     if not speech.exact:
-        from ..subtitles.align import align
-
-        units, matched = align(speech.audio, text, lang)
-        speech.units = units
-        speech.notes.append(f"Whisper-aligned ({matched:.0%} of units matched)")
+        _align(speech, text, lang)
     sf.write(wav, speech.audio, SR)
     # continue with exactly what later runs will read back (16-bit), so fresh and cached runs agree bit for bit
     speech.audio, _ = sf.read(wav, dtype="float32")
-    cache.put_json(digest, {"units": [u.__dict__ for u in speech.units], "exact": speech.exact,
-                            "engine": speech.engine, "notes": speech.notes})
+    _store(cache, digest, speech)
     return speech
+
+
+def _align_rev() -> int:
+    from ..subtitles.align import ALIGN_REV
+
+    return ALIGN_REV
+
+
+def _align(speech: Speech, text: str, lang: str) -> None:
+    from ..subtitles import align as alignmod
+
+    units, matched = alignmod.align(speech.audio, text, lang)
+    speech.units = units
+    speech.notes.append(f"Whisper-aligned ({matched:.0%} of units matched)")
+
+
+def _store(cache: cachemod.Cache, digest: str, speech: Speech) -> None:
+    meta = {"units": [u.__dict__ for u in speech.units], "exact": speech.exact,
+            "engine": speech.engine, "notes": speech.notes}
+    if not speech.exact:
+        meta["align_rev"] = _align_rev()
+    cache.put_json(digest, meta)
 
 
 def _assemble(script: Script, lang: str, spec: dict, config: dict, speed: float, log) -> tuple[np.ndarray, dict]:
