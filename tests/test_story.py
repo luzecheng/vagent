@@ -158,3 +158,51 @@ def test_section_headings_in_brackets_are_not_narration():
 
     script = "开头一句。\n【第一步：明确目标】\n达利欧说，第一步，先搞清楚你到底要什么。\n"
     check_script({"shots": [{"narration": "开头一句。"}, {"narration": "达利欧说，第一步，先搞清楚你到底要什么。"}]}, script)
+
+
+def test_highlight_words_are_found_in_a_subtitle():
+    """Keywords split a subtitle into plain and gold runs; English matches whole words, ignoring case."""
+    from story.render import runs
+
+    assert runs("你是先看机会 还是先看风险", ["机会", "风险"]) == [
+        ("你是先看", False), ("机会", True), (" 还是先看", False), ("风险", True)]
+    assert runs("Is it risky? Weigh the Risk first", ["risk"]) == [
+        ("Is it risky? Weigh the ", False), ("Risk", True), (" first", False)]
+    assert runs("没有关键词的一句", []) == [("没有关键词的一句", False)]
+
+
+def test_wrap_never_splits_a_highlighted_word():
+    """A gold keyword stays on one row, even where the row would otherwise break inside it."""
+    cr, size = _ctx(), 50
+    line = "春夏秋冬东南西北上下左右"
+    max_w = text_width(cr, line[:6], size) + 1
+    assert not any("南西" in r for r in wrap(cr, line, size, max_w))    # left alone, it breaks between 南 and 西
+    rows = wrap(cr, line, size, max_w, keep=["南西"])
+    assert any("南西" in r for r in rows), rows
+    assert all(text_width(cr, r, size) <= max_w for r in rows)
+
+
+def test_highlight_words_reach_the_timeline_in_each_language(tmp_path):
+    from story.narrate import narrate
+
+    config = {"tts": {"zh": {"speed": 1.0, "voice": "x"}, "en": {"speed": 1.0, "voice": "x"},
+                      "pause_s": {"sentence": 0.38, "question": 0.5, "colon": 0.3, "paragraph": 0.7}},
+              "paths": {"models": str(tmp_path), "cache": str(tmp_path)}}
+    shots = [{"id": 1, "act": "a", "narration": "有的人先看机会，有的人先想风险。", "scene": "walk", "params": {},
+              "narration_en": "Some see the opportunity, others the risk.", "highlight": ["机会", "风险"],
+              "highlight_en": ["opportunity", "risk"]},
+             {"id": 2, "act": "a", "narration": "没有关键词的一句。", "narration_en": "A plain line.",
+              "scene": "walk", "params": {}}]
+    _, zh = narrate({"shots": shots}, config, draft=True)
+    _, en = narrate({"shots": shots}, config, lang="en", draft=True)
+    assert [t["highlight"] for t in zh["shots"]] == [["机会", "风险"], []]
+    assert [t["highlight"] for t in en["shots"]] == [["opportunity", "risk"], []]
+
+
+def test_markdown_title_and_bold_marks_are_not_narration():
+    """A script written in Markdown: the `# title` line is for the reader and **bold** marks are formatting, so
+    shots that leave them out still match the script."""
+    from story.narrate import check_script
+
+    script = "# 看对趋势的人很多\n\n当时流行一句话：\n\n**守币，比守寡还难。**\n\n## 小节\n\n结尾。\n"
+    check_script({"shots": [{"narration": "当时流行一句话："}, {"narration": "守币，比守寡还难。结尾。"}]}, script)

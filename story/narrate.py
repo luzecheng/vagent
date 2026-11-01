@@ -63,9 +63,11 @@ def _pause(sentence: str, pauses: dict, paragraph: bool) -> float:
 
 def check_script(storyboard: dict, script_text: str) -> None:
     """The narration must be the script, word for word and in order: shots only split it, never edit it.
-    Lines that are only a 【heading】 are for the reader and are not spoken."""
+    Lines that are only a 【heading】 or a Markdown `# heading` are for the reader and are not spoken, and
+    Markdown **bold** marks are formatting."""
     flat = lambda s: re.sub(r"\s+", "", s)
-    script_text = re.sub(r"^[ \t]*【[^】\n]*】[ \t]*$", "", script_text, flags=re.M)
+    script_text = re.sub(r"^[ \t]*(【[^】\n]*】|#+[ \t].*)[ \t]*$", "", script_text, flags=re.M)
+    script_text = script_text.replace("**", "")
     said, wrote = flat("".join(s["narration"] for s in storyboard["shots"])), flat(script_text)
     if said == wrote:
         return
@@ -180,6 +182,7 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
         t["end"] = timeline[i + 1]["start"] if i + 1 < len(timeline) else round(duration, 3)
         a, b = bounds[i]
         t["narration"], t["quote"] = shots[i][field], shots[i].get(quote_field)   # this language's words
+        t["highlight"] = list(shots[i].get("highlight" + ("_en" if lang == "en" else ""), []))
         t["subs"] = _subtitles(full, a, b, char_time, t["end"] if i + 1 == len(timeline) else None, lang)
         if t["quote"]:
             t["quote_at"] = _quote_time(full, a, b, t["quote"], char_time, t)

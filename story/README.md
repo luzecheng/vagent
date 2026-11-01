@@ -44,10 +44,14 @@ story/
 - `narration`: the script's own words. Joined in order, the shots must equal the script exactly (whitespace
   aside); `render` checks this against `script` and stops on any difference. Split anywhere, even mid-sentence:
   a sentence is still spoken as one sentence and the cut lands where the voice reaches that word.
+  Lines that are only a 【heading】 or a Markdown `# heading` are not spoken, and `**bold**` marks are left out.
   A narration ending in a line break (`"阻碍财富积累的几个习惯\n"`, a title line with no full stop) ends its sentence there.
 - `act`: shots in the same act follow each other with a sentence pause, a new act gets a longer pause.
 - `quote` (optional, 1–2 per video): gold glowing words, fading in as the voice says them; use words that
   appear in that shot's narration, so they come in on time.
+- `highlight` (optional): 1–2 key words of that shot's narration, shown in gold in the subtitles (on a phone
+  the eye catches them first); `highlight_en` picks words from `narration_en`. A keyword never breaks across
+  subtitle rows; English keywords match whole words, any case.
 - `corner` (optional): "①" "②" "③" in the top corner, for numbered steps.
 - `hold` (optional): seconds of silence after the shot; on the last shot the final subtitle stays on screen.
 - `visual`: the picture in words, for the person reviewing the storyboard (not used by the renderer).

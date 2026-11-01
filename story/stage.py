@@ -139,6 +139,28 @@ def text(cr, s, size, cx, cy, col=WHITE, a=1.0, weight=cairo.FONT_WEIGHT_NORMAL,
     cr.show_text(s)
 
 
+def text_runs(cr, parts, size, cx, cy, a=1.0, outline=0.0):
+    """Centred text in coloured runs [(text, colour)], e.g. a subtitle with gold keywords.  `outline` (a fraction
+    of the size) draws a dark edge round the letters so they stay readable over bright parts of the picture."""
+    if a <= 0 or not parts:
+        return
+    cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+    cr.set_font_size(size)
+    x, y = cx - sum(cr.text_extents(s).x_advance for s, _ in parts) / 2, cy + size * 0.35
+    if outline > 0:
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        cr.move_to(x, y)
+        for s, _ in parts:
+            cr.text_path(s)
+        cr.set_line_width(outline * size)
+        cr.set_source_rgba(0.04, 0.05, 0.09, 0.62 * a)
+        cr.stroke()
+    cr.move_to(x, y)
+    for s, col in parts:
+        cr.set_source_rgba(col[0], col[1], col[2], col[3] * a)
+        cr.show_text(s)
+
+
 def text_width(cr, s, size, weight=cairo.FONT_WEIGHT_NORMAL) -> float:
     cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, weight)
     cr.set_font_size(size)

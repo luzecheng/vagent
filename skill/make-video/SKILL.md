@@ -42,12 +42,13 @@ Read `<vagent>/story/README.md` first: it has the storyboard format, the writing
 
 1. **Storyboard.** Create `<vagent>/output/YYYY-MM-DD_<short-name>/storyboard.json` (today's date). Turn the
    script into the protagonist's story: split the script, in order and word for word, into shots; give each
-   shot one scene from the scene list with params, a `visual` line in Chinese, acts, 1–2 `quote` shots, and
-   `corner` ①②③ for numbered steps. Set `"script"` to the script file's path. The narration is the script
+   shot one scene from the scene list with params, a `visual` line in Chinese, acts, 1–2 `quote` shots,
+   `highlight` on most shots (1–2 key words of its narration, shown gold in the subtitles), and `corner` ①②③
+   for numbered steps. Set `"script"` to the script file's path. The narration is the script
    itself: never add, drop or reword anything (the renderer checks this and stops on any difference).
    Also write the cover (`cover_title`, a short gold title; `cover_subtitle`, one line) and the English
-   version: `narration_en` for every shot (faithful, natural English, not word-for-word), `quote_en` using
-   words from that shot's `narration_en`, `title_en`, `cover_title_en`, `cover_subtitle_en`, and `*_en`
+   version: `narration_en` for every shot (faithful, natural English, not word-for-word), `quote_en` and
+   `highlight_en` using words from that shot's `narration_en`, `title_en`, `cover_title_en`, `cover_subtitle_en`, and `*_en`
    versions of any Chinese text in scene params (e.g. `labels_en`).
 2. **Draft and confirm.** Run `<vagent>/.venv/bin/python -m story.render <folder> --draft` (seconds; run it
    from `<vagent>`). Show the user, in Chinese, the cover title, a table of the shots (镜号 / 旁白 / English /

@@ -18,6 +18,7 @@ import json
 import math
 from multiprocessing import get_context
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -33,7 +34,7 @@ from vagent.render.engine import embed_artwork
 from . import hero as H
 from . import narrate as narration
 from . import scenes
-from .stage import GOLD, WHITE, Camera, Stage, circle, lerp, ramp, text, text_width
+from .stage import GOLD, WHITE, Camera, Stage, circle, lerp, ramp, text, text_runs, text_width
 
 FORMATS = {"landscape": (1920, 1080), "portrait": (1080, 1920)}
 FPS = 30
@@ -255,15 +256,18 @@ class Film:
         for j in (i - 1, i, i + 1):
             if not 0 <= j < len(self.shots):
                 continue
+            keys = self.shots[j].get("highlight", [])
             for sub in self.shots[j]["subs"]:
                 if sub["start"] <= t <= sub["end"]:           # fades stay inside the line's own time
                     a = ramp(t, sub["start"], sub["start"] + 0.12) * (1 - ramp(t, sub["end"] - 0.12, sub["end"]))
-                    size = (58 if portrait else 46) * u
-                    max_w = W * (0.76 if portrait else 0.80)
-                    rows, size = fit_rows(cr, sub["text"], size, max_w)
-                    base = Hh * (0.775 if portrait else 0.905) - (len(rows) - 1) * size * 1.3
+                    size = (SUB_SIZE["portrait"] if portrait else SUB_SIZE["landscape"]) * u
+                    max_w = W * (0.80 if portrait else 0.82)
+                    rows, size = fit_rows(cr, sub["text"], size, max_w, keep=keys)
+                    base = Hh * (0.775 if portrait else 0.895) - (len(rows) - 1) * size * 1.3
                     for n, row in enumerate(rows):
-                        text(cr, row, size, W * (0.46 if portrait else 0.5), base + n * size * 1.3, WHITE, a=a * 0.96)
+                        parts = [(s, GOLD if gold else WHITE) for s, gold in runs(row, keys)]
+                        text_runs(cr, parts, size, W * (0.46 if portrait else 0.5), base + n * size * 1.3, a=a,
+                                  outline=0.14)
         # vignette and the fade in / out at the ends
         v = cairo.RadialGradient(W / 2, Hh / 2, min(W, Hh) * 0.35, W / 2, Hh / 2, max(W, Hh) * 0.75)
         v.add_color_stop_rgba(0, 0, 0, 0, 0)
@@ -293,6 +297,7 @@ def shot_at(shots, t):
     return i
 
 
+SUB_SIZE = {"landscape": 60, "portrait": 68}   # subtitle size in px at 1080: large enough to read on a phone
 NO_START = "》」』”’）)、，。：；？！?!:;,."
 NO_END = "《「『“‘（("
 
@@ -327,10 +332,34 @@ PAUSE_AFTER = "，、；：。？！ ,;:"
 PAUSE_BEFORE = "“《「（"
 
 
-def wrap(cr, s, size, max_w):
+def runs(s: str, words) -> list[tuple[str, bool]]:
+    """`s` cut into (piece, is_keyword) runs.  Longer keywords win; Latin keywords match whole words, any case."""
+    words = sorted({w for w in words if w}, key=len, reverse=True)
+    if not words:
+        return [(s, False)] if s else []
+    pattern = "|".join(rf"(?<!\w){re.escape(w)}(?!\w)" if w.isascii() else re.escape(w) for w in words)
+    out, pos = [], 0
+    for m in re.finditer(pattern, s, re.IGNORECASE):
+        if m.start() > pos:
+            out.append((s[pos:m.start()], False))
+        out.append((m.group(), True))
+        pos = m.end()
+    if pos < len(s):
+        out.append((s[pos:], False))
+    return out
+
+
+def wrap(cr, s, size, max_w, keep=()):
     """Break a subtitle into rows that each fit max_w, as evenly filled as the row count allows.  Two rows break
-    where a reader would pause (after punctuation, before a quote) when that keeps both rows fitting."""
-    points = [k for k in _break_points(s) if not (s[k - 1] in NUMERALS and s[k] in NUMERALS)]  # keep 双十一 whole
+    where a reader would pause (after punctuation, before a quote) when that keeps both rows fitting.  Words in
+    `keep` (the gold keywords) are never broken across rows."""
+    inside, pos = set(), 0
+    for piece, gold in runs(s, keep):
+        if gold:
+            inside.update(range(pos + 1, pos + len(piece)))
+        pos += len(piece)
+    points = [k for k in _break_points(s)
+              if not (s[k - 1] in NUMERALS and s[k] in NUMERALS) and k not in inside]  # keep 双十一 whole
     rows = _greedy(cr, s, size, max_w, points)
     if len(rows) == 2:
         fitting = [k for k in points
@@ -351,10 +380,10 @@ def wrap(cr, s, size, max_w):
     return rows
 
 
-def fit_rows(cr, s, size, max_w, max_rows=2):
+def fit_rows(cr, s, size, max_w, max_rows=2, keep=()):
     """Rows and font size for a subtitle: shrink the text a little (down to 80%) before using more rows."""
     for k in (1.0, 0.92, 0.85, 0.8):
-        rows = wrap(cr, s, size * k, max_w)
+        rows = wrap(cr, s, size * k, max_w, keep)
         if len(rows) <= max_rows:
             return rows, size * k
     return rows, size * 0.8
