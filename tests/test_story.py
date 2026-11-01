@@ -206,3 +206,27 @@ def test_markdown_title_and_bold_marks_are_not_narration():
 
     script = "# 看对趋势的人很多\n\n当时流行一句话：\n\n**守币，比守寡还难。**\n\n## 小节\n\n结尾。\n"
     check_script({"shots": [{"narration": "当时流行一句话："}, {"narration": "守币，比守寡还难。结尾。"}]}, script)
+
+
+def test_compare_bubbles_sit_over_the_two_heads_and_their_words_fit():
+    """Each thought bubble stays on screen, above its person's head, clear of the other bubble, and the longest
+    line of words fits inside it, in both formats."""
+    import cairo
+
+    from story.scenes.compare import HEAD_TOP, bubble_top, fit, layout
+    from story.stage import Stage
+
+    cr = _ctx()
+    words = [["Untested?", "What breaks?", "Enough time?"], ["Great, we're finally launching!"]]
+    for W, H_ in ((1920, 1080), (1080, 1920)):
+        st = Stage(W, H_)
+        (hx, ox), (top, bottom), width = layout(st)
+        assert 0 < top < bottom < st.horizon - HEAD_TOP * st.s, (W, top, bottom)
+        assert hx - width / 2 >= 0 and ox + width / 2 <= W and hx + width / 2 < ox - width / 2
+        rows, size = fit(cr, st, words)
+        assert size >= 40 * st.u, (W, size)                     # long lines wrap rather than shrink to nothing
+        assert [" ".join(r) for r in rows] == [" ".join(w) for w in words]
+        assert max(text_width(cr, s, size, cairo.FONT_WEIGHT_BOLD) for r in rows for s in r) <= width - 60 * st.u
+        for r in rows:
+            assert top <= bubble_top(st, r, size) < bottom - len(r) * size * 1.35
+        assert rows[0] == words[0], rows                         # short lines stay whole

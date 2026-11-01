@@ -101,6 +101,7 @@ story/
 | `signpost` | 插路牌 | plants a glowing signpost by the stone (a rule) | |
 | `strike` | 划掉旧观点 | an old belief in the sky is struck out in red and sinks; the new view rises in gold | `old`, `new` (+ `old_en`, `new_en`) |
 | `ring_meet` | 圆环相遇 | two lights leave one point on a ring in opposite directions and meet at the top | `labels` (+`labels_en`), `meet` (+`meet_en`), `until` (0.5: only out to the sides) |
+| `compare` | 对比卡 | the hero and someone else face each other across one shared thing; a thought bubble over each head shows how each sees it (no `quote` on this shot) | `topic`, `left`, `right` (string or list of lines; + `_en`), `poses` ([hero, other], e.g. ["bend", "lamp_up"]) |
 | `face_camera` | 转身 | turns to face the viewer, lamp alight (closing question) | `zoom` |
 
 A new scene is one file in `scenes/` with `TITLE`, `MIN_S`, `camera`, `hero`, `draw` (and optionally `speed`,
