@@ -19,6 +19,7 @@ ZH_SYMBOL_WORDS = {"+": "加", "＋": "加", "=": "等于", "＝": "等于"}
 ZH_ACRONYM = re.compile(r"(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])")  # read as one word ("AI" -> "爱") unless spaced
 ZH_YEAR = re.compile(r"(?<!\d)(\d{4})\s*年")  # a year is said digit by digit, not as a cardinal number
 ZH_DIGITS = dict(zip("0123456789", "零一二三四五六七八九"))
+ZH_DECIMAL = re.compile(r"(?<![\d.])(\d+)\.(\d+)(?![\d.])")  # 3.2 is 三点二, not "三 二"; 1.2.3 is not a decimal
 ZH_DASH = re.compile(r"\s*(?:——|—|--)\s*")   # a dash is a pause, not a syllable (a hyphen as in 2020-2021 stays)
 # This machine's respellings for the Chinese voice ("phrase: what to say"), e.g. a comma where the voice groups
 # characters wrongly. Personal (git-ignored); missing means no rules.
@@ -125,15 +126,17 @@ def _respell(text: str, rules: list[tuple[str, str]]) -> str:
 def spoken_text(text: str, lang: str) -> str:
     """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, this machine's respellings
     (SPOKEN_FILE) applied, + and = spelled out, dashes read as a pause, capital-letter acronyms spelled letter
-    by letter and years read digit by digit. Subtitles keep the author's text."""
+    by letter, years and the digits after a decimal point read one by one. Years are read before the
+    respellings, so a rule like "8年: 八年" cannot break "2018年". Subtitles keep the author's text."""
     for mark, repl in QUOTES.items():
         text = text.replace(mark, repl)
     if lang == "zh":
+        text = ZH_YEAR.sub(lambda m: "".join(ZH_DIGITS[d] for d in m.group(1)) + "年", text)
+        text = ZH_DECIMAL.sub(lambda m: m.group(1) + "点" + "".join(ZH_DIGITS[d] for d in m.group(2)), text)
         text = _respell(text, _zh_rules())
         text = ZH_SYMBOLS.sub(lambda m: ZH_SYMBOL_WORDS[m.group(1)], text)
         text = ZH_DASH.sub("，", text)
         text = ZH_ACRONYM.sub(lambda m: " ".join(m.group()), text)
-        text = ZH_YEAR.sub(lambda m: "".join(ZH_DIGITS[d] for d in m.group(1)) + "年", text)
     return text
 
 

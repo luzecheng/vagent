@@ -297,3 +297,20 @@ def test_asr_check_ignores_hyphens_and_digit_spelling_in_english():
     assert error_rate("Two: ask yourself.", "2. Ask yourself.", "en") == 0
     assert error_rate("Spend-and-save deals", "Spend and save deals", "en") == 0
     assert error_rate("Two cats", "Three cats", "en") > 0
+
+
+def test_spoken_text_reads_a_decimal_point_in_chinese():
+    # cv2:me read "3.2个比特币" as "三 二", dropping the point; digits after the point are said one by one
+    assert parse.spoken_text("亏掉了3.2个比特币", "zh") == "亏掉了3点二个比特币"
+    assert parse.spoken_text("涨了12.05%", "zh") == "涨了12点零五%"
+    assert parse.spoken_text("版本 1.2.3 不是小数", "zh") == "版本 1.2.3 不是小数"
+    assert parse.spoken_text("lost 3.2 bitcoin", "en") == "lost 3.2 bitcoin"
+
+
+def test_a_respelling_does_not_break_a_year(tmp_path, monkeypatch):
+    # the rule "8年: 八年" turned "2018年" into "201八年", which the year rule no longer saw (heard "法巡18年")
+    rules = tmp_path / "zh_spoken.yaml"
+    rules.write_text("8年: 八年\n", encoding="utf-8")
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    assert parse.spoken_text("2018年12月", "zh") == "二零一八年12月"
+    assert parse.spoken_text("坚持了8年", "zh") == "坚持了八年"
