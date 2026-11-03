@@ -30,7 +30,7 @@ if [ -d .venv ] && ! supported .venv/bin/python; then
 fi
 [ -d .venv ] || "$PY" -m venv .venv
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -e ".[asr,test]"
+.venv/bin/pip install -q -e ".[test]"
 
 mkdir -p models
 BASE=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1

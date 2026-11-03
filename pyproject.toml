@@ -10,10 +10,9 @@ license = {text = "MIT"}
 requires-python = ">=3.11,<3.14"
 # misaki: Chinese phonemes only (English goes through kokoro-onnx's espeak-ng), so no spaCy
 dependencies = ["kokoro-onnx", "misaki[zh]", "soundfile", "numpy", "scipy", "pillow", "pyyaml", "pydantic>=2",
-                "jieba", "pypinyin", "cn2an", "zhconv", "fonttools"]
+                "jieba", "pypinyin", "cn2an", "zhconv", "fonttools", "faster-whisper"]
 
 [project.optional-dependencies]
-asr = ["faster-whisper"]
 youtube = ["google-api-python-client", "google-auth-oauthlib"]
 test = ["pytest"]
 
