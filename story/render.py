@@ -1,6 +1,7 @@
 """Render a storyboard into story-style videos: 1920×1080 landscape and 1080×1920 portrait.
 
     .venv/bin/python -m story.render <episode folder or storyboard.json> [--portrait | --only landscape|portrait]
+Default formats: Chinese portrait, English landscape (DEFAULT_FORMATS); --portrait gives both for each.
                                      [--preview] [--stills]
 
 Steps: narration (vagent TTS, your configured voice) -> shot timeline from the real audio -> soft music mix
@@ -37,6 +38,15 @@ from . import scenes
 from .stage import GOLD, WHITE, Camera, Stage, circle, lerp, ramp, text, text_runs, text_width
 
 FORMATS = {"landscape": (1920, 1080), "portrait": (1080, 1920)}
+# What each language gets without --portrait / --only: Chinese is for 视频号, watched on phones (portrait);
+# English is for X (landscape).
+DEFAULT_FORMATS = {"zh": ["portrait"], "en": ["landscape"]}
+
+
+def formats_for(lang: str, args) -> list[str]:
+    if args.only:
+        return [args.only]
+    return list(FORMATS) if args.portrait else DEFAULT_FORMATS.get(lang, ["landscape"])
 FPS = 30
 TRANS = 0.7          # seconds two shots overlap while one fades into the next
 HERO_BLEND = 0.6     # seconds the hero takes to flow from one shot's pose into the next
@@ -315,11 +325,15 @@ def _break_points(s: str) -> list[int]:
     return points
 
 
-def _greedy(cr, s, size, width, points):
+def _greedy(cr, s, size, width, points, cut=True):
+    """Fill rows up to `width`, ending them only at break points.  A word wider than `width` is cut when `cut`
+    (better than spilling off screen); with cut=False the answer is None instead."""
     rows, start = [], 0
     while text_width(cr, s[start:].strip(), size) > width:
         fits = [k for k in points if k > start and text_width(cr, s[start:k].strip(), size) <= width]
         if not fits:                     # one word wider than the screen: cut it rather than let it spill
+            if not cut:
+                return None
             fits = [max(k for k in range(start + 1, len(s)) if text_width(cr, s[start:k], size) <= width)]
         rows.append(s[start:fits[-1]].strip())
         start = fits[-1]
@@ -373,8 +387,8 @@ def wrap(cr, s, size, max_w, keep=()):
             return [s[:k].strip(), s[k:].strip()]
     width = max_w
     while width > max_w * 0.5:           # narrow the target while the row count stays: balanced rows
-        trial = _greedy(cr, s, size, width * 0.96, points)
-        if len(trial) != len(rows):
+        trial = _greedy(cr, s, size, width * 0.96, points, cut=False)
+        if trial is None or len(trial) != len(rows):     # narrower would cut a word or add a row: stop
             break
         rows, width = trial, width * 0.96
     return rows
@@ -479,7 +493,8 @@ def load(path: Path) -> tuple[Path, dict]:
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="story.render", description=__doc__.splitlines()[0])
     ap.add_argument("episode", type=Path)
-    ap.add_argument("--portrait", action="store_true", help="also render 1080x1920 (default: landscape only)")
+    ap.add_argument("--portrait", action="store_true",
+                    help="both formats for every language (default: Chinese portrait 1080x1920, English landscape)")
     ap.add_argument("--only", choices=list(FORMATS), help="render just this format")
     ap.add_argument("--lang", choices=["zh", "en", "all"], default="all",
                     help="all (default): Chinese, plus English when every shot has narration_en")
@@ -510,7 +525,7 @@ def render_language(folder: Path, sb: dict, lang: str, args) -> None:
     build.mkdir(exist_ok=True)
     tag = "" if lang == "zh" else f"_{lang}"
     seed = zlib.crc32(sb.get("title", "").encode())
-    formats = [args.only] if args.only else (list(FORMATS) if args.portrait else ["landscape"])
+    formats = formats_for(lang, args)
     print(f"--- {lang}", flush=True)
 
     audio, timeline = narration.narrate(sb, config, log=lambda m: print(m, flush=True), draft=args.draft, lang=lang)

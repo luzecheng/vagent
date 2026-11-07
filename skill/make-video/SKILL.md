@@ -1,6 +1,6 @@
 ---
 name: make-video
-description: Turn a Chinese script into a story-style line-art animated video (「一笔」 walking through night mountains; 1920×1080 landscape in Chinese and English, portrait on request) with the user's configured voice, music, subtitles and publish notes, using the local vagent tool; or, on request, the classic style (Chinese 视频号 + English X versions with infographic scenes). Use when the user runs /make-video, or asks to make / render / produce a video from a script (文稿做成视频、出片、做视频号视频).
+description: Turn a Chinese script into a story-style line-art animated video (「一笔」 walking through night mountains; Chinese in portrait 1080×1920 for 视频号, English in landscape 1920×1080 for X) with the user's configured voice, music, subtitles and publish notes, using the local vagent tool; or, on request, the classic style (Chinese 视频号 + English X versions with infographic scenes). Use when the user runs /make-video, or asks to make / render / produce a video from a script (文稿做成视频、出片、做视频号视频).
 ---
 
 # /make-video
@@ -12,7 +12,7 @@ There are two styles:
 
 | Style | When | Output |
 |---|---|---|
-| **Story** (default) | always, unless the user asks otherwise | line-art story animation, landscape 1920×1080, Chinese and English: `story_landscape.mp4`, `story_en_landscape.mp4`, covers. Portrait 1080×1920 (`story_portrait.mp4`, `story_en_portrait.mp4`) only when the user asks for 竖屏 / 9:16 / portrait: add `--portrait` to the draft and render commands |
+| **Story** (default) | always, unless the user asks otherwise | line-art story animation: Chinese in portrait 1080×1920 (`story_portrait.mp4`, for 视频号) and English in landscape 1920×1080 (`story_en_landscape.mp4`, for X), covers. This is the renderer's default, no flag needed. Both formats in both languages only when the user asks for it (横竖屏都要 / 也要横屏 / English portrait): add `--portrait` to the draft and render commands; one format only: `--only landscape` or `--only portrait` |
 | **Classic** | the user asks for 原来的风格 / 信息图 / 经典版 | `zh_shipinhao.mp4`, `en_x_9x16.mp4`, covers, report |
 
 ## 0. Find vagent
@@ -52,7 +52,7 @@ Read `<vagent>/story/README.md` first: it has the storyboard format, the writing
    versions of any Chinese text in scene params (e.g. `labels_en`).
 2. **Draft and confirm.** Run `<vagent>/.venv/bin/python -m story.render <folder> --draft` (seconds; run it
    from `<vagent>`). Show the user, in Chinese, the cover title, a table of the shots (镜号 / 旁白 / English /
-   画面 / 场景 / 金句) and the estimated length, and open `draft_landscape.png`. Wait for the user to confirm or change it; edit
+   画面 / 场景 / 金句) and the estimated length, and open `draft_portrait.png` (the Chinese draft). Wait for the user to confirm or change it; edit
    `storyboard.json` as they say and draft again. Do not start the full render before they confirm.
 3. **Render.** Run `<vagent>/.venv/bin/python -m story.render <folder>` from `<vagent>` in the background.
    Tell the user how long: the voice is synthesized sentence by sentence and is the slow part (Chinese in the
@@ -65,7 +65,7 @@ Read `<vagent>/story/README.md` first: it has the storyboard format, the writing
 5. **Publish notes.** Write `publish_notes.md` in the folder: for 视频号 in Chinese, 3 title options (≤ 20 字),
    a 2–3 sentence description, 3–5 hashtags; for X in English, a post under 280 characters with 1–2
    hashtags. All from the script's own content.
-6. **Report** in Chinese and plain words: the videos (two by default, four with portrait) and their length, the qa items, anything you
+6. **Report** in Chinese and plain words: the videos (two by default: Chinese portrait and English landscape; four with `--portrait`) and their length, the qa items, anything you
    noticed on the contact sheets, and where the files are (videos, `cover_*.png` for uploading as the cover,
    `publish_notes.md`). Offer to open the videos (`open <file>`).
 

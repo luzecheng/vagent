@@ -2,7 +2,8 @@
 
 One Chinese script becomes a story-style animated video: 「一笔」, a figure drawn in glowing white lines with a
 gold point of light in the chest, walks through night mountains, meets something on the way, and learns one
-principle from it. Output is 1920×1080 landscape (add `--portrait` for 1080×1920 too), with the configured voice, soft music,
+principle from it. Output: Chinese in 1080×1920 portrait (视频号), English in 1920×1080 landscape (X); `--portrait`
+renders both formats for each language, `--only landscape|portrait` just one. With the configured voice, soft music,
 subtitles and 1–2 gold quote shots. Nothing is uploaded or published.
 
 ```
@@ -18,9 +19,10 @@ story/
 
 1. Make a folder, e.g. `output/2026-10-29_<name>/`, and write `storyboard.json` there (format below).
 2. `.venv/bin/python -m story.render <folder> --draft` — contact sheets with estimated timing, no TTS
-   (`draft_landscape.png`; with `--portrait` also `draft_portrait.png`): show these with the storyboard table and get it confirmed.
+   (`draft_portrait.png` for Chinese, `draft_en_landscape.png` for English; with `--portrait` both formats of each): show these
+   with the storyboard table and get it confirmed.
 3. `.venv/bin/python -m story.render <folder>` — narration, listening check (`qa.md`), music, both videos
-   (`story_landscape.mp4`, and `story_portrait.mp4` with `--portrait`), contact sheets, `timeline.json`. TTS is the slow part
+   (`story_portrait.mp4` and `story_en_landscape.mp4`; all four with `--portrait`), contact sheets, `timeline.json`. TTS is the slow part
    (cached per sentence, so a rerun after a visual change takes about two minutes).
 
 ## storyboard.json
@@ -103,6 +105,14 @@ story/
 | `ring_meet` | 圆环相遇 | two lights leave one point on a ring in opposite directions and meet at the top | `labels` (+`labels_en`), `meet` (+`meet_en`), `until` (0.5: only out to the sides) |
 | `compare` | 对比卡 | the hero and someone else face each other across one shared thing; a thought bubble over each head shows how each sees it (no `quote` on this shot) | `topic`, `left`, `right` (string or list of lines; + `_en`), `poses` ([hero, other], e.g. ["bend", "lamp_up"]) |
 | `face_camera` | 转身 | turns to face the viewer, lamp alight (closing question) | `zoom` |
+| `book` | 书 | an open book floats in the sky, lines of text write themselves in (reading, studying) | `flips` (pages riffle past: reading fast), `close` (folds shut at the end), `title` (+`title_en`) |
+| `screen` | 屏幕 | a phone or laptop screen lights up and fills with content (AI answers, scrolling) | `device`: `phone` / `laptop`, `lines` (up to 4 short words, + `lines_en`), `off` (the screen switches off at the end: "关掉屏幕") |
+| `chat` | 对话框 | a conversation with AI: your bubbles (white, left) and AI's (gold, right) appear in turn, AI typing first | `bubbles` (short words from the script, yours first, + `bubbles_en`), `count` (bubbles without words) |
+| `map` | 导航 | a map; a gold route draws itself and a light follows it (following directions) | `off` (navigation switches off halfway: the route fades and the light stops at a junction) |
+| `chart` | 曲线图 | axes and a curve drawing itself (growth, decline, ups and downs) | `trend`: `up` / `down` / `wave` / `up_down` / `down_up`, `values` (numbers from the script only), `labels` ([left, right], + `labels_en`), `color`: `gold` / `red` / `white` |
+
+The object scenes (`book` … `chart`) float the object beside the hero, clear of the moon (in portrait, wide
+objects go overhead); use them when the narration names the thing, so the picture shows what is said.
 
 A new scene is one file in `scenes/` with `TITLE`, `MIN_S`, `camera`, `hero`, `draw` (and optionally `speed`,
 `front`); add its name to `scenes/__init__.py`.

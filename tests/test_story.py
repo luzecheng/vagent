@@ -1,4 +1,6 @@
 """Story mode: subtitle layout and timing rules that are easy to break."""
+import math
+
 import cairo
 
 from story.render import wrap
@@ -230,3 +232,135 @@ def test_compare_bubbles_sit_over_the_two_heads_and_their_words_fit():
         for r in rows:
             assert top <= bubble_top(st, r, size) < bottom - len(r) * size * 1.35
         assert rows[0] == words[0], rows                         # short lines stay whole
+
+
+OBJECT_CASES = {
+    "book": [{}, {"flips": 3}, {"close": True, "title": "一本很厚很厚很厚很厚很厚的书"}],
+    "screen": [{}, {"off": True}, {"device": "laptop", "lines": ["重点", "摘要", "思维导图", "这一行特别特别特别特别长"]}],
+    "chat": [{}, {"count": 4}, {"bubbles": ["帮我读完这本书", "好的，这是重点、摘要和一份很长很长很长很长的思维导图"]}],
+    "map": [{}, {"off": True}],
+    "chart": [{}, {"trend": "down", "color": "red"}, {"values": [3, 1, 4, 1, 5], "labels": ["2018 年 12 月", "2021"]}],
+}
+
+
+def test_object_scenes_float_above_the_hero_and_their_words_fit():
+    """Books, screens, chats, maps and charts stay inside the frame and above the hero's head, and every word
+    on them fits its space, in both formats."""
+    import importlib
+
+    from story.scenes import _objects
+    from story.scenes.compare import HEAD_TOP
+    from story.stage import Stage
+
+    cr = _ctx()
+    for W, H_ in ((1920, 1080), (1080, 1920)):
+        st = Stage(W, H_)
+        reach = _objects.hero_x(st) + _objects.HERO_REACH * st.s
+        head = st.horizon - HEAD_TOP * st.s
+        mx, my, mr = _objects.moon(st)
+        for name, cases in OBJECT_CASES.items():
+            mod = importlib.import_module(f"story.scenes.{name}")
+            for params in cases:
+                L = mod.layout(cr, st, params)
+                x0, y0, x1, y1 = L["box"]
+                assert 0 <= x0 < x1 <= W and 0 <= y0 < y1 < st.horizon, (name, W, params, L["box"])
+                assert x0 > reach or y1 < head, (name, W, params, "touches the hero")
+                nearest = (min(max(mx, x0), x1), min(max(my, y0), y1))          # the box point closest to the moon
+                assert math.dist(nearest, (mx, my)) > mr * 0.5, (name, W, params, "covers the moon")
+                for word, size, room in L["texts"]:
+                    assert size >= 20 * st.u, (name, word, size)
+                    assert text_width(_ctx(), word, size) <= room + 0.5, (name, word, size, room)
+
+
+def test_object_scenes_draw_every_moment_without_errors():
+    """Each object scene draws from start to end with each of its options, in both formats."""
+    import importlib
+
+    import cairo
+
+    from story.stage import Stage
+
+    for W, H_ in ((1920, 1080), (1080, 1920)):
+        st = Stage(W, H_)
+        cr = cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H_))
+        for name, cases in OBJECT_CASES.items():
+            mod = importlib.import_module(f"story.scenes.{name}")
+            for params in cases:
+                for p in (0.0, 0.1, 0.3, 0.55, 0.7, 0.9, 1.0):
+                    st.t = p * 5
+                    assert mod.hero(st, p, 5.0, params)["x"] > 0
+                    mod.draw(cr, st, p, 5.0, 1.0, params)
+
+
+def test_chart_labels_stay_over_the_plot():
+    from story.scenes import chart
+    from story.stage import Stage
+
+    cr = _ctx()
+    for W, H_ in ((1920, 1080), (1080, 1920)):
+        st = Stage(W, H_)
+        params = {"labels": ["2018 年 12 月", "2021 年"]}
+        L = chart.layout(cr, st, params)
+        pts = chart.curve(params, L["plot"])
+        for i, word in enumerate(L["labels"]):
+            half = text_width(cr, word, L["size"]) / 2
+            x = chart.label_x(cr, L, pts, i)
+            assert L["plot"][0] <= x - half and x + half <= L["plot"][2] + 0.5
+
+
+def test_screen_rows_never_overlap():
+    """Words on a screen sit one per row; each row is taller than its words, on a phone and on a laptop."""
+    from story.scenes import screen
+    from story.stage import Stage
+
+    cr = _ctx()
+    for W, H_ in ((1920, 1080), (1080, 1920)):
+        st = Stage(W, H_)
+        for device in ("phone", "laptop"):
+            L = screen.layout(cr, st, {"device": device, "lines": ["重点", "摘要", "思维导图", "第四行"]})
+            assert L["size"] * 1.25 <= L["step"], (W, device, L["size"], L["step"])
+
+
+def test_portrait_puts_wide_objects_overhead_and_tall_ones_beside_the_hero():
+    from story.scenes import _objects
+    from story.stage import Stage
+
+    st = Stage(1080, 1920)
+    wide, tall = _objects.region(st, aspect=1.5), _objects.region(st, aspect=0.5)
+    assert wide[0] == st.W / 2 and tall[0] > st.W / 2
+
+
+def test_portrait_shows_a_laptop_as_a_phone_so_its_words_stay_large():
+    from story.scenes import screen
+    from story.stage import Stage
+
+    cr = _ctx()
+    params = {"device": "laptop", "lines": ["重点", "摘要", "思维导图"]}
+    land, port = Stage(1920, 1080), Stage(1080, 1920)
+    assert screen.device(land, params) == "laptop" and screen.device(port, params) == "phone"
+    assert screen.layout(cr, port, params)["size"] >= 56 * port.u
+
+
+def test_balancing_rows_never_cuts_an_english_word():
+    """Evening out the rows must not narrow them past a whole word: "understanding" stays in one piece."""
+    cr = _ctx()
+    q = "it can't do the understanding for you"
+    for size, max_w in ((92, 1080 * 0.80), (58, 1080 * 0.76), (92, 1920 * 0.86)):
+        rows = wrap(cr, q, size, max_w)
+        assert " ".join(rows) == q, rows
+        assert all(text_width(cr, r, size) <= max_w for r in rows), rows
+
+
+def test_chinese_defaults_to_portrait_and_english_to_landscape():
+    """视频号 (Chinese) is watched on phones: portrait by default; X (English) stays landscape.  --portrait still
+    gives both formats, --only exactly one."""
+    from types import SimpleNamespace
+
+    from story.render import formats_for
+
+    plain = SimpleNamespace(only=None, portrait=False)
+    assert formats_for("zh", plain) == ["portrait"]
+    assert formats_for("en", plain) == ["landscape"]
+    both = SimpleNamespace(only=None, portrait=True)
+    assert formats_for("zh", both) == formats_for("en", both) == ["landscape", "portrait"]
+    assert formats_for("zh", SimpleNamespace(only="landscape", portrait=False)) == ["landscape"]
