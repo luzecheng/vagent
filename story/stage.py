@@ -181,6 +181,8 @@ class Stage:
     H: int
     seed: int = 7
     cam: Camera = field(default_factory=Camera)
+    scenery: bool = False          # forested mountains, street lamps and benches (forest.py, scenery.py)
+    roadside: float = 1.0          # lamps and benches opacity for the current frame, set by the film
 
     def __post_init__(self):
         self.u = min(self.W, self.H) / 1080
@@ -197,6 +199,28 @@ class Stage:
                        rnd.uniform(0, 6.28), rnd.uniform(0.5, 1.8)) for _ in range(int(420 * span / 3840 * 2))]
         self.layers = [self._peaks(rnd, 0.50, 0.60, 0.33, 0.50, M_FAR, 0.10),
                        self._peaks(rnd, 0.58, 0.67, 0.28, 0.42, M_MID, 0.25)]
+        if self.scenery:
+            from .scenery import Scenery
+            self.props = Scenery(self, self.seed)
+            self.forest = self._forest()
+
+    def _forest(self):
+        """The mountain layers covered in trees (story/forest.py), far to near, plus a low wooded ridge."""
+        from .forest import forest_mountain_layer
+        hf, k = self.horizon / self.H, min(self.W, self.H) / self.H        # near hills as tall in both formats
+        near = self._peaks(random.Random(self.seed + 1), hf - 0.12 * k, hf - 0.06 * k, 0.2, 0.32, M_NEAR, 0.45)
+        specs = [  # layer, lift, tree height (design px), density, tree colours (light half, dark half), swaying trees
+            (self.layers[0], 0.80, 16, 1.8, ["55606a/434c57", "515d64/3f4952", "59646d/47505a"], 0),
+            (self.layers[1], 0.90, 26, 1.8, ["47584f/34433c", "42524b/313e38", "4c5d54/384740"], 0),
+            (near, 0.95, 40, 1.6, ["3f7353/24493a", "386a4c/1f4133", "468059/295240"], 12),
+        ]
+        out = []
+        for k, ((peaks, cols, speed), lift_k, size, density, shades, sway) in enumerate(specs):
+            out.append(forest_mountain_layer(
+                peaks, cols, density, size, self.seed * 7 + k, W=self.W, H=self.H, horizon=self.horizon, u=self.u,
+                speed=speed, lift_k=lift_k, sway=sway, lights=(0, 3),
+                tree_colors=[tuple(hexc(c) for c in pair.split("/")) for pair in shades]))
+        return out
 
     def _peaks(self, rnd, ymin, ymax, wmin, wmax, cols, speed):
         peaks, x = [], -self.W * 0.3
@@ -235,7 +259,9 @@ class Stage:
         mx, my = W * (0.84 if not self.portrait else 0.78), H * (0.13 if not self.portrait else 0.16) + self.sky_shift * 0.55
         glow_dot(cr, mx - cam.travel * 0.02, my, 34 * self.u, hexc("efe9dc"), rings=6, spread=0.5)
         unit_w = max(W, H * 0.9) * 0.5
-        for (peaks, (light, dark), speed) in self.layers:
+        for layer in (self.forest if self.scenery else []):
+            layer.paint(cr, cam.travel, self.sky_shift, t, self.u)
+        for (peaks, (light, dark), speed) in ([] if self.scenery else self.layers):
             dy = self.sky_shift * (0.8 if speed < 0.2 else 0.9)
             for cx, top, w in peaks:          # peaks cover 3.6 widths: enough for any walk in one video
                 x = cx - cam.travel * speed
@@ -256,6 +282,8 @@ class Stage:
         cr.move_to(-W, gy)
         cr.line_to(W * 2, gy)
         cr.stroke()
+        if self.scenery:
+            self.props.roadside(cr, self, t, self.roadside)
 
 
 def _tri(cr, pts, col):

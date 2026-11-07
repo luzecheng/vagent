@@ -16,6 +16,7 @@ from . import _props
 
 TITLE = "反思之光"
 MIN_S = 3.5
+ROADSIDE = False     # mostly standing still: no lamps or benches behind the hero (scenery.py)
 
 
 def camera(params):

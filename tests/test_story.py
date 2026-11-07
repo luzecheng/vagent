@@ -364,3 +364,71 @@ def test_chinese_defaults_to_portrait_and_english_to_landscape():
     both = SimpleNamespace(only=None, portrait=True)
     assert formats_for("zh", both) == formats_for("en", both) == ["landscape", "portrait"]
     assert formats_for("zh", SimpleNamespace(only="landscape", portrait=False)) == ["landscape"]
+
+
+# ---------- scenery: forested mountains, lamps, benches ----------
+def _forest_args():
+    from story.stage import M_MID, hexc
+
+    return dict(peaks=[(200.0, 0.55, 300.0), (420.0, 0.6, 260.0)], colors=M_MID, tree_density=1.5, tree_scale=20,
+                W=480, H=270, horizon=210.0, u=0.25, speed=0.25, lift_k=0.9,
+                tree_colors=[(hexc("4f4b66"), hexc("3b3851")), (hexc("48445f"), hexc("36334b"))])
+
+
+def test_forest_is_the_same_on_every_render_and_changes_with_the_seed():
+    from story.forest import forest_mountain_layer
+
+    a = forest_mountain_layer(seed=3, **_forest_args())
+    b = forest_mountain_layer(seed=3, **_forest_args())
+    c = forest_mountain_layer(seed=4, **_forest_args())
+    assert bytes(a.surface.get_data()) == bytes(b.surface.get_data())
+    assert bytes(a.surface.get_data()) != bytes(c.surface.get_data())
+    assert a.trees > 100
+
+
+def test_trees_cover_the_peak_to_the_summit_and_line_both_ridges():
+    """Trees right up to the summit (smaller there), with a row on each ridge (the saw-tooth)."""
+    import random
+    from story.forest import _slope_trees
+
+    cx, py, base, half, line_y, bottom = 500.0, 100.0, 1400.0, 2000.0, 140.0, 400.0
+    trees = _slope_trees(random.Random(1), cx, py, half, base, line_y, bottom, 1.5, 20.0, 3)
+    assert trees and all(tr.y >= line_y for tr in trees)
+    top = [tr for tr in trees if tr.y < line_y + (bottom - line_y) * 0.1]
+    assert top and max(tr.h for tr in top) < 20.0 * 1.3 * 0.7    # small trees at the summit
+    slope = half / (base - py)
+    for side in (-1, 1):
+        on_ridge = [tr for tr in trees if abs(tr.x - (cx + side * slope * (tr.y - py))) < tr.h * 0.3]
+        assert len(on_ridge) > 10, side
+    low = sum(tr.y > (line_y + bottom) / 2 for tr in trees)
+    assert low > len(trees) - low                       # thickest at the foot
+
+
+def test_scenery_is_off_unless_the_storyboard_asks(tmp_path):
+    from story.narrate import narrate
+    from story.stage import Stage
+
+    assert not Stage(480, 270).scenery and not hasattr(Stage(480, 270), "forest")
+    config = {"tts": {"zh": {"speed": 1.0, "voice": "x"}, "pause_s": {"sentence": 0.38, "question": 0.5,
+                                                                     "colon": 0.3, "paragraph": 0.7}},
+              "paths": {"models": str(tmp_path), "cache": str(tmp_path)}}
+    shots = [{"id": 1, "act": "a", "narration": "路上总会有石头。", "scene": "walk", "params": {}}]
+    assert narrate({"shots": shots}, config, draft=True)[1]["scenery"] is False
+    assert narrate({"shots": shots, "scenery": True}, config, draft=True)[1]["scenery"] is True
+
+
+def test_roadside_props_stay_out_of_shots_that_need_the_space():
+    """Lamps and benches only while the hero walks; a shot can force them on or off."""
+    from story.render import Film
+
+    def shot(i, scene, **extra):
+        return {"id": i, "scene": scene, "params": {}, "narration": "x", "start": i * 5.0, "end": i * 5.0 + 5,
+                "subs": [], "quote": None, **extra}
+    tl = {"duration": 25.0, "lang": "zh", "scenery": True,
+          "shots": [shot(0, "walk"), shot(1, "book"), shot(2, "fork"), shot(3, "face_camera"),
+                    shot(4, "book", roadside=True)]}
+    film = Film(tl, 480, 270, 1)
+    assert [film._roadside(i) for i in range(5)] == [1.0, 0.0, 0.0, 0.0, 1.0]
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 480, 270)
+    for t in (0.5, 5.3, 12.0, 24.0):                    # including mid-way through a shot change
+        film.draw(cairo.Context(surf), t)

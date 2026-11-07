@@ -9,6 +9,8 @@ subtitles and 1–2 gold quote shots. Nothing is uploaded or published.
 ```
 story/
   stage.py        the shared world (sky, stars, moon, mountains, ground) and the continuous camera
+  forest.py       forested mountains, pre-rendered once per layer (with "scenery": true)
+  scenery.py      street lamps and benches by the road (with "scenery": true)
   hero.py         「一笔」: poses, pose blending, the lamp
   scenes/         one file per scene (see the list below); _props.py has the shared props
   narrate.py      TTS per sentence (vagent cache + voice), timing from the real audio, listening check
@@ -55,6 +57,9 @@ story/
   the eye catches them first); `highlight_en` picks words from `narration_en`. A keyword never breaks across
   subtitle rows; English keywords match whole words, any case.
 - `corner` (optional): "①" "②" "③" in the top corner, for numbered steps.
+- `"scenery": true` (top level, optional): the world gets forested mountains (three layers, `forest.py`), and
+  street lamps and benches by the road (`scenery.py`). Lamps and benches only appear while the hero walks; a shot
+  can force them on or off with `"roadside": true / false`. Off by default, so older storyboards render as before.
 - `hold` (optional): seconds of silence after the shot; on the last shot the final subtitle stays on screen.
 - `visual`: the picture in words, for the person reviewing the storyboard (not used by the renderer).
 - Cover: `cover_title` (gold, short) and `cover_subtitle` (one line). The cover is the video's first frame

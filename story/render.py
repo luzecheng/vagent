@@ -58,7 +58,7 @@ class Film:
     def __init__(self, timeline: dict, W: int, H_: int, seed: int):
         self.tl, self.shots = timeline, timeline["shots"]
         self.duration = timeline["duration"]
-        self.st = Stage(W, H_, seed=seed)
+        self.st = Stage(W, H_, seed=seed, scenery=bool(timeline.get("scenery")))
         self.mods = [scenes.get(s["scene"]) for s in self.shots]
         lang = timeline.get("lang", "zh")
         self.params = [localized(s.get("params", {}), lang) for s in self.shots]
@@ -126,10 +126,22 @@ class Film:
             h["lamp"] = self.lamp_in[i]
         return h
 
+    def _roadside(self, i):
+        """Lamps and benches in shot i (1 or 0): the storyboard's "roadside" if set, else while the hero walks."""
+        forced = self.shots[i].get("roadside")
+        if forced is not None:
+            return 1.0 if forced else 0.0
+        mod = self.mods[i]
+        return 1.0 if getattr(mod, "ROADSIDE", hasattr(mod, "speed")) else 0.0
+
     def draw(self, cr, t):
         st = self.st
         i = shot_at(self.shots, t)
         st.t = t
+        if st.scenery:                      # roadside props fade along with the shot change
+            k = ramp(t, self.shots[i]["start"], self.shots[i]["start"] + TRANS) if i > 0 else 1.0
+            now, before = self._roadside(i), self._roadside(i - 1) if i > 0 else self._roadside(i)
+            st.roadside = lerp(before, now, k)
         cam = self._camera_at(i, t, self.cam_start[i])
         st.cam = Camera(lift=cam["lift"], zoom=cam["zoom"], travel=self.travel[min(len(self.travel) - 1, int(t * FPS))])
 

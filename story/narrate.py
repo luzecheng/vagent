@@ -190,7 +190,7 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
     for this, after in zip(subs, subs[1:]):   # one line on screen at a time, also across shots
         this["end"] = round(min(this["end"], after["start"] - 0.05), 3)
     return audio, {"duration": round(duration, 3), "shots": timeline, "draft": draft, "lang": lang,
-                   "_spoken": spoken_sentences}
+                   "scenery": bool(storyboard.get("scenery")), "_spoken": spoken_sentences}
 
 
 def listen(spoken: list, lang: str = "zh", threshold: float = 0.12) -> list[dict]:

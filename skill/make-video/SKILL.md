@@ -44,7 +44,8 @@ Read `<vagent>/story/README.md` first: it has the storyboard format, the writing
    script into the protagonist's story: split the script, in order and word for word, into shots; give each
    shot one scene from the scene list with params, a `visual` line in Chinese, acts, 1–2 `quote` shots,
    `highlight` on most shots (1–2 key words of its narration, shown gold in the subtitles), and `corner` ①②③
-   for numbered steps. Set `"script"` to the script file's path. The narration is the script
+   for numbered steps. Set `"script"` to the script file's path, and `"scenery": true` (forested mountains,
+   street lamps, benches). The narration is the script
    itself: never add, drop or reword anything (the renderer checks this and stops on any difference).
    Also write the cover (`cover_title`, a short gold title; `cover_subtitle`, one line) and the English
    version: `narration_en` for every shot (faithful, natural English, not word-for-word), `quote_en` and

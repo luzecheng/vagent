@@ -11,6 +11,7 @@ from ..stage import ramp
 
 TITLE = "转身"
 MIN_S = 3.0
+ROADSIDE = False     # mostly standing still: no lamps or benches behind the hero (scenery.py)
 
 
 def camera(params):

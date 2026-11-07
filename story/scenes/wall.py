@@ -11,6 +11,7 @@ from ..stage import ramp, line
 
 TITLE = "撞墙/断崖"
 MIN_S = 3.0
+ROADSIDE = False     # the hero stops at the wall: a bench there would lean on it (scenery.py)
 
 
 def camera(params):
