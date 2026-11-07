@@ -192,8 +192,24 @@ def test_spoken_text_reads_years_digit_by_digit_in_chinese():
     assert parse.spoken_text("1982 年，他公开预测经济会崩溃", "zh") == "一九八二年，他公开预测经济会崩溃"
     assert parse.spoken_text("2006年和2026 年", "zh") == "二零零六年和二零二六年"
     assert parse.spoken_text("1980年代", "zh") == "一九八零年代"
-    assert parse.spoken_text("借了四千美元，花了 4000 元", "zh") == "借了四千美元，花了 4000 元"  # not a year
+    assert parse.spoken_text("借了四千美元，花了 4000 元", "zh") == "借了四千美元，花了四千元"  # a cardinal, not a year
     assert parse.spoken_text("In 1982 he was wrong.", "en") == "In 1982 he was wrong."
+
+
+def test_spoken_text_reads_whole_numbers_as_chinese_numerals():
+    # CosyVoice misread digits on its own: "打卡 30 天" came out "三xi天", "重复了 100 遍" as "十遍"
+    assert parse.spoken_text("打卡 30 天", "zh") == "打卡三十天"
+    assert parse.spoken_text("重复了 100 遍。", "zh") == "重复了一百遍。"
+    assert parse.spoken_text("这都过去8年了，涨了3倍", "zh") == "这都过去八年了，涨了三倍"
+    assert parse.spoken_text("丢了63亿美元，有 20000 人", "zh") == "丢了六十三亿美元，有两万人"
+    assert parse.spoken_text("2个人，第2次，2月4日", "zh") == "两个人，第二次，二月四日"
+    assert parse.spoken_text("至少有60%掉队，留下 40 %", "zh") == "至少有百分之六十掉队，留下百分之四十"
+    assert parse.spoken_text("涨了 1,000 点", "zh") == "涨了一千点"
+    assert parse.spoken_text("增长了3.5倍", "zh") == "增长了三点五倍"
+    # numbers that belong to a name, a time or a range are left to the voice as written
+    assert parse.spoken_text("用 GPT-4 和 M1，iPhone 15 上 9:30 开会", "zh") == "用 G P T-4 和 M1，iPhone 15 上 9:30 开会"
+    assert parse.spoken_text("2020-2021", "zh") == "2020-2021"
+    assert parse.spoken_text("I did it 30 times.", "en") == "I did it 30 times."
 
 
 def test_spoken_text_spells_out_capital_letter_acronyms_in_chinese():
@@ -301,8 +317,8 @@ def test_asr_check_ignores_hyphens_and_digit_spelling_in_english():
 
 def test_spoken_text_reads_a_decimal_point_in_chinese():
     # cv2:me read "3.2个比特币" as "三 二", dropping the point; digits after the point are said one by one
-    assert parse.spoken_text("亏掉了3.2个比特币", "zh") == "亏掉了3点二个比特币"
-    assert parse.spoken_text("涨了12.05%", "zh") == "涨了12点零五%"
+    assert parse.spoken_text("亏掉了3.2个比特币", "zh") == "亏掉了三点二个比特币"
+    assert parse.spoken_text("涨了12.05%", "zh") == "涨了百分之十二点零五"
     assert parse.spoken_text("版本 1.2.3 不是小数", "zh") == "版本 1.2.3 不是小数"
     assert parse.spoken_text("lost 3.2 bitcoin", "en") == "lost 3.2 bitcoin"
 
@@ -312,5 +328,5 @@ def test_a_respelling_does_not_break_a_year(tmp_path, monkeypatch):
     rules = tmp_path / "zh_spoken.yaml"
     rules.write_text("8年: 八年\n", encoding="utf-8")
     monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
-    assert parse.spoken_text("2018年12月", "zh") == "二零一八年12月"
+    assert parse.spoken_text("2018年12月", "zh") == "二零一八年十二月"
     assert parse.spoken_text("坚持了8年", "zh") == "坚持了八年"

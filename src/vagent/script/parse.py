@@ -20,6 +20,14 @@ ZH_ACRONYM = re.compile(r"(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])")  # read as one w
 ZH_YEAR = re.compile(r"(?<!\d)(\d{4})\s*年")  # a year is said digit by digit, not as a cardinal number
 ZH_DIGITS = dict(zip("0123456789", "零一二三四五六七八九"))
 ZH_DECIMAL = re.compile(r"(?<![\d.])(\d+)\.(\d+)(?![\d.])")  # 3.2 is 三点二, not "三 二"; 1.2.3 is not a decimal
+# A whole number (1,000 too), optionally a percentage.  Not when it belongs to a name, time or range: next to a
+# Latin letter, a colon or a hyphen, or after an English word and a space (GPT-4, M1, iPhone 15, 9:30,
+# 2020-2021).  Spaces between it and the Chinese around it are swallowed: "打卡 30 天" is read "打卡三十天".
+ZH_INT = re.compile(r"(?:(?<=[\u4e00-\u9fff，、：；])\s+)?(?<![\dA-Za-z.:\-])(?<![A-Za-z]\s)"
+                    r"(\d{1,3}(?:,\d{3})+|\d+)(?![\d,]*\d)(?![A-Za-z:\-])(?!\.\d)"
+                    r"(\s*(?=[\u4e00-\u9fff]))?")
+ZH_PERCENT = re.compile(r"(?:(?<=[\u4e00-\u9fff，、：；])\s+)?(?<![\dA-Za-z.:\-])(\d+(?:\.\d+)?)\s*[%％]")   # 12.05% is 百分之十二点零五
+ZH_LIANG_BEFORE = set("个次天本件人只条张名位种遍周倍岁斤块元台家所颗份")  # 2 + measure word is 两, not 二
 ZH_DASH = re.compile(r"\s*(?:——|—|--)\s*")   # a dash is a pause, not a syllable (a hyphen as in 2020-2021 stays)
 # This machine's respellings for the Chinese voice ("phrase: what to say"), e.g. a comma where the voice groups
 # characters wrongly. Personal (git-ignored); missing means no rules.
@@ -123,16 +131,43 @@ def _respell(text: str, rules: list[tuple[str, str]]) -> str:
     return pattern.sub(lambda m: lookup[m.group()], text)
 
 
+def _zh_cardinal(digits: str) -> str:
+    """30 -> 三十, 20000 -> 两万, 007 -> 零零七 (a leading zero: said digit by digit)."""
+    import cn2an
+
+    if len(digits) > 1 and digits.startswith("0"):
+        return "".join(ZH_DIGITS[d] for d in digits)
+    words = cn2an.an2cn(digits)
+    return "两" + words[1:] if len(words) > 1 and words[0] == "二" and words[1] in "千万亿" else words
+
+
+def _zh_decimal(number: str) -> str:
+    whole, _, frac = number.partition(".")
+    return _zh_cardinal(whole) + ("点" + "".join(ZH_DIGITS[d] for d in frac) if frac else "")
+
+
+def _zh_number(m: re.Match) -> str:
+    """A whole number as Chinese numerals; 2 before a measure word is 两 (2个 -> 两个, but 第2次 -> 第二次)."""
+    digits = m.group(1).replace(",", "")
+    following = m.string[m.end():m.end() + 1]
+    if digits == "2" and following in ZH_LIANG_BEFORE and m.string[max(0, m.start() - 1):m.start()] != "第":
+        return "两"
+    return _zh_cardinal(digits)
+
+
 def spoken_text(text: str, lang: str) -> str:
     """Text handed to TTS: quotes removed (they are not pronounced); in Chinese, this machine's respellings
     (SPOKEN_FILE) applied, + and = spelled out, dashes read as a pause, capital-letter acronyms spelled letter
-    by letter, years and the digits after a decimal point read one by one. Years are read before the
+    by letter, years and the digits after a decimal point read one by one, other whole numbers and percentages
+    as Chinese numerals (the voice misread digits on its own: "30 天" as "三xi天"). Numbers are read before the
     respellings, so a rule like "8年: 八年" cannot break "2018年". Subtitles keep the author's text."""
     for mark, repl in QUOTES.items():
         text = text.replace(mark, repl)
     if lang == "zh":
         text = ZH_YEAR.sub(lambda m: "".join(ZH_DIGITS[d] for d in m.group(1)) + "年", text)
-        text = ZH_DECIMAL.sub(lambda m: m.group(1) + "点" + "".join(ZH_DIGITS[d] for d in m.group(2)), text)
+        text = ZH_PERCENT.sub(lambda m: "百分之" + _zh_decimal(m.group(1)), text)
+        text = ZH_DECIMAL.sub(lambda m: _zh_decimal(m.group()), text)
+        text = ZH_INT.sub(_zh_number, text)
         text = _respell(text, _zh_rules())
         text = ZH_SYMBOLS.sub(lambda m: ZH_SYMBOL_WORDS[m.group(1)], text)
         text = ZH_DASH.sub("，", text)
