@@ -432,3 +432,22 @@ def test_roadside_props_stay_out_of_shots_that_need_the_space():
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 480, 270)
     for t in (0.5, 5.3, 12.0, 24.0):                    # including mid-way through a shot change
         film.draw(cairo.Context(surf), t)
+
+
+def test_a_street_lamp_is_drawn_whole_or_not_at_all():
+    """A lamp whose post has left the frame must not leave its head hanging in the corner (and a lamp whose
+    head is still outside must not stand there as a bare post)."""
+    import cairo
+    import numpy as np
+    from story.stage import Camera, Stage
+    st = Stage(1080, 1920, scenery=True)
+    wx = st.props.lamps[0]
+    for post_x in (-10.0, 1080 - 20.0, 1080 - 120.0):   # post off the left edge / head, or its glow, off the right
+        st.cam = Camera(travel=wx - post_x)
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+        st.props.roadside(cairo.Context(surf), st, 0.0, 1.0)
+        surf.flush()
+        px = np.ndarray((1920, surf.get_stride() // 4, 4), np.uint8, surf.get_data())[:, :1080]
+        top = int(st.horizon - 300 * st.s)
+        band = px[top:int(st.horizon) + 5, :200] if post_x < 0 else px[top:int(st.horizon) + 5, 880:]
+        assert band[..., 3].max() == 0, f"part of a lamp drawn with its post at x={post_x}"

@@ -27,7 +27,10 @@ WHITE = (1.0, 1.0, 1.0, 1.0)
 RED = hexc("e5645a")
 M_FAR, M_MID, M_NEAR = (hexc("6f6a80"), hexc("5a566c")), (hexc("8f8a9e"), hexc("74708a")), (hexc("3a4058"), hexc("30354a"))
 GROUND = hexc("262b3d")
-FONT = "Noto Sans CJK SC"
+# Cairo's toy text API on this Mac does not resolve the installed Noto Sans CJK
+# family correctly and falls back to tofu boxes. Use the system CJK family,
+# which renders Chinese glyphs reliably in the story renderer.
+FONT = "PingFang SC"
 
 
 # ---------- easing ----------

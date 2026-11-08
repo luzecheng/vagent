@@ -36,7 +36,12 @@ class Scenery:
         cr.push_group()
         for wx in self.lamps:
             for x in self._on_screen(wx, travel, st.W, 100):
-                _street_lamp(cr, x, gy, s, t)
+                k = _whole_in_frame(x - 6 * s, x + LAMP_REACH * s, st.W, 40 * s)
+                if k > 0:
+                    cr.push_group()
+                    _street_lamp(cr, x, gy, s, t)
+                    cr.pop_group_to_source()
+                    cr.paint_with_alpha(k)
         for wx in self.benches:
             for x in self._on_screen(wx, travel, st.W, 100):
                 _bench(cr, x, gy, s)
@@ -47,6 +52,17 @@ class Scenery:
         """Screen positions of a thing at world x `wx` (the pattern repeats every `span`) that can be seen."""
         x = (wx - travel) % self.span
         return [p for p in (x, x - self.span) if p + size > -100 and p - 100 < W]
+
+
+LAMP_REACH = 74              # from the post to the far edge of the lamp glow (arm 34 + glow 38.4), design px
+
+
+def _whole_in_frame(left, right, W, fade):
+    """Opacity for a thing spanning [left, right]: 0 as soon as any part of it is outside the frame, fading up to
+    1 over `fade` px as it comes fully inside.  A lamp then never shows as a head without its post (its post has
+    left the frame) or a post without its head: it fades out at the edges instead of being cut by them."""
+    room = min(left, W - right)
+    return max(0.0, min(1.0, room / fade))
 
 
 def _street_lamp(cr, x, gy, s, t):

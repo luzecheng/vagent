@@ -1,0 +1,8 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+Use the attached reference image as the exact same robot character, in the exact same neutral standing pose. Keep everything identical: head, visor band, armor plates, joints, ice-blue accents, line style, glow, body proportions, camera angle, scale and position.
+
+Only add one detail:
+- On the robot's left shoulder armor plate (which appears on the right side of the image), a small simple emblem: a minimal ice-blue sail shape inside a thin ice-blue circle, like a mission patch. No text, no letters, no numbers.
+
+Composition stays the same: pure solid black background, no ground, no shadow, no text, white and ice-blue only, landscape 16:9.

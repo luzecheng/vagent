@@ -1,6 +1,6 @@
 ---
 name: make-video
-description: Turn a Chinese script into a story-style line-art animated video (「一笔」 walking through night mountains; Chinese in portrait 1080×1920 for 视频号, English in landscape 1920×1080 for X) with the user's configured voice, music, subtitles and publish notes, using the local vagent tool; or, on request, the classic style (Chinese 视频号 + English X versions with infographic scenes). Use when the user runs /make-video, or asks to make / render / produce a video from a script (文稿做成视频、出片、做视频号视频).
+description: Turn a Chinese script into an animated story video — by default the robot style (a white-line robot walking one continuous night road past Codex-drawn props, with code-drawn chat bubbles, charts and coins), or on request the 「一笔」 line-art style; Chinese in portrait 1080×1920 for 视频号, English in landscape 1920×1080 for X — with the user's configured voice, music, subtitles and publish notes, using the local vagent tool; or, on request, the classic style (Chinese 视频号 + English X versions with infographic scenes). Use when the user runs /make-video, or asks to make / render / produce a video from a script (文稿做成视频、出片、做视频号视频).
 ---
 
 # /make-video
@@ -8,11 +8,12 @@ description: Turn a Chinese script into a story-style line-art animated video (�
 Produce videos from one Chinese script with the local vagent tool. Everything stays on this computer:
 never upload, post or publish anything, and never send the videos anywhere.
 
-There are two styles:
+There are three styles:
 
 | Style | When | Output |
 |---|---|---|
-| **Story** (default) | always, unless the user asks otherwise | line-art story animation: Chinese in portrait 1080×1920 (`story_portrait.mp4`, for 视频号) and English in landscape 1920×1080 (`story_en_landscape.mp4`, for X), covers. This is the renderer's default, no flag needed. Both formats in both languages only when the user asks for it (横竖屏都要 / 也要横屏 / English portrait): add `--portrait` to the draft and render commands; one format only: `--only landscape` or `--only portrait` |
+| **Robot** (default) | always, unless the user asks otherwise | the white-line robot walks one continuous road through the blue-black silhouette world (`robotfilm`), stops at Codex-drawn props and acts each shot out; Chinese portrait `robot2/robot2_portrait.mp4`, English landscape `robot2/robot2_en_landscape.mp4`, covers. See **2R** |
+| **Story** | the user asks for 线条人 / 一笔 / 原来的故事版 | line-art story animation: Chinese in portrait 1080×1920 (`story_portrait.mp4`, for 视频号) and English in landscape 1920×1080 (`story_en_landscape.mp4`, for X), covers. This is the renderer's default, no flag needed. Both formats in both languages only when the user asks for it (横竖屏都要 / 也要横屏 / English portrait): add `--portrait` to the draft and render commands; one format only: `--only landscape` or `--only portrait` |
 | **Classic** | the user asks for 原来的风格 / 信息图 / 经典版 | `zh_shipinhao.mp4`, `en_x_9x16.mp4`, covers, report |
 
 ## 0. Find vagent
@@ -36,7 +37,32 @@ own: tell the user the three steps from the README (`git clone https://github.co
 - If the user gave a file path, use that file as is.
 - If there is no script, ask for it. Do not write one yourself.
 
-## 2S. Story style (default)
+## 2R. Robot style (default)
+
+Read `<vagent>/robotfilm/robot_story.py` (top docstring) and the last episode's `robot2/beats.py` as the worked
+example (`robotfilm/examples/讨论即开发_beats.py`, its props prompt next to it); shared helpers are in `robotfilm/fx.py`.
+Do not stop for storyboard confirmation (the user wants the video made directly).
+
+1. **Storyboard and voice.** Write `output/YYYY-MM-DD_<short-name>/storyboard.json` as in 2S step 1 (narration word
+   for word, `narration_en`, `highlight`, 1–3 `quote`, cover fields), every shot `"scene": "walk"`. Then run
+   `<vagent>/.venv/bin/python -m story.render <folder> --stills` in the background: it only synthesizes the voice
+   and writes `timeline.json` / `timeline_en.json`, `build/voice*.wav`, `qa.md` (the slow part).
+2. **Props.** Meanwhile have Codex draw one props sheet of nine objects for this episode (3 rows × 3, separate
+   islands on black, white glowing lines + ice-blue, no text) — copy `robotfilm/examples/讨论即开发_道具图提示词.txt`
+   and change only the object list; reference image: the last episode's props sheet. Call
+   `codex exec --skip-git-repo-check -s read-only -i <ref> - < prompt`, copy the new image from
+   `~/.codex/generated_images/` (diff the folder before/after) to `<folder>/robot2/frames/道具图_v1.png`. Look at it.
+3. **Beats.** Write `<folder>/robot2/beats.py`: `PROPS` (the nine names in sheet order), `MACHINE = None`, and
+   `BEATS[shot id]` = walk seconds, pose, `stations` (props the robot stops at; `out` to remove them early),
+   `fx` (code-drawn bubbles, labels, charts, coins…). Words on screen come from the script only.
+4. **Check sheets, then render.** `.venv/bin/python -m robotfilm.robot_story <folder> --sheet` (seconds) writes
+   `robot2/review/sheet_*.png`: look at both, fix overlaps / props piling up / unreadable labels, repeat. After the
+   voice is done: `.venv/bin/python -m robotfilm.robot_story <folder>` in the background (~3–4 min). Extract a few
+   frames with ffmpeg and look at them. `--world story` uses the 「一笔」 forested world instead.
+5. **Report** as in 2S steps 4–6 (qa items, files, publish notes), and say plainly that you only looked at
+   frames: whether the motion looks natural is for the user to judge.
+
+## 2S. Story style (on request: 线条人 / 一笔)
 
 Read `<vagent>/story/README.md` first: it has the storyboard format, the writing rules and the scene list.
 

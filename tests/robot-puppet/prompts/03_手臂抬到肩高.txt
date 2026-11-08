@@ -1,0 +1,7 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+Use the attached reference image as the exact same robot character, in the same front view, same camera distance, same scale and same position in the frame. Keep everything identical: head, visor, armor plates, joints, ice-blue accents, line style, glow, body proportions.
+
+Only change the pose: the robot's right arm (on the left side of the image) is raised out to the side to shoulder height, the upper arm horizontal, the elbow slightly bent, the forearm angled upward, palm facing forward. The arm stays beside the helmet, never in front of it or the visor. The other arm hangs relaxed at the side. Legs and feet exactly as in the reference.
+
+Pure solid black background, no ground, no shadow, no text. White and ice-blue only. Landscape 16:9.

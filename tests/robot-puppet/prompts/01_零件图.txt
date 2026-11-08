@@ -1,0 +1,21 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+The attached reference image shows a robot character: fine white flowing contour lines on black, tangled white scribble lines in the gaps, a soft white glow on the outlines, ice-blue glowing spherical joints, chest core and visor line.
+
+Draw a CUT-OUT PUPPET PARTS SHEET of exactly this robot, for 2D animation: every body part drawn separately, in the same line style, glow and proportions as the reference, as if the robot were taken apart. Pure solid black background. Landscape 16:9.
+
+Rules for every part:
+- Each part is a separate island with a wide empty black gap around it. No part touches or overlaps another. No connecting lines.
+- No spherical joints on the parts: each end of a limb part is a clean rounded cap (the joints are added later).
+- All parts at the same scale, as if from one robot about 80% of the image height.
+- Limb parts are drawn perfectly vertical: the end that attaches closer to the body is at the top.
+- No text, no labels, no numbers, no arrows, no grid.
+
+Top row, left to right (4 parts):
+1. Head in SIDE view, facing right: the large smooth round helmet, the ice-blue visor line seen from the side as a short glowing line on the right front of the helmet. Include the short neck below it.
+2. Head in FRONT view: the large round helmet with the full thin ice-blue visor line across it. Include the short neck.
+3. Torso in SIDE view, facing right: chest, waist and hips in one piece (shoulders at the top, hips at the bottom), the ice-blue chest core visible near the right (front) edge.
+4. Torso in FRONT view: chest, waist and hips in one piece, the round ice-blue chest core in the center.
+
+Bottom row, left to right (6 parts), all vertical:
+5. Upper arm. 6. Forearm. 7. Hand, side view, fingers pointing down, relaxed. 8. Thigh. 9. Shin. 10. Foot in side view, toe pointing right, sole flat at the bottom.

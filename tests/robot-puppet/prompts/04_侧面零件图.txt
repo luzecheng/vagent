@@ -1,0 +1,21 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+Two reference images are attached.
+- Image 1 is the robot character in side view. Copy its exact look: fine white glowing contour lines following the 3D surface, tangled white scribble lines in the gaps, soft white glow on the outlines, ice-blue accents. The armor reads as white glowing lines on black, never as dark solid shapes.
+- Image 2 is only a LAYOUT example of a cut-out puppet parts sheet. Use its layout idea (separate parts with wide gaps, limbs vertical), not its drawing style.
+
+Draw a CUT-OUT PUPPET PARTS SHEET of the robot from image 1, all parts in SIDE VIEW facing right, same scale as one robot about 80% of the image height. Pure solid black background. Landscape 16:9.
+
+Rules for every part:
+- Each part is a separate island with a wide empty black gap around it. No part touches or overlaps another. No connecting lines.
+- No spherical joints on the parts: each end of a limb part is a clean rounded cap (the joints are added later).
+- Limb parts are drawn perfectly vertical: the end that attaches closer to the body is at the top.
+- Same thickness as in image 1: a straight boxy torso, no narrow waist, no protruding chest.
+- No text, no labels, no numbers, no arrows.
+
+Top row, left to right (2 parts):
+1. Head in side view facing right: the large round helmet with the short ice-blue visor line on its right front, and the short neck below it.
+2. Torso in side view facing right: chest, waist and hips in one piece (shoulders at the top, hips at the bottom), the ice-blue chest core visible at the right (front) edge.
+
+Bottom row, left to right (6 parts), all vertical:
+3. Upper arm. 4. Forearm. 5. Hand in side view, fingers pointing down, relaxed. 6. Thigh. 7. Shin. 8. Foot in side view, toe pointing right, sole flat at the bottom.

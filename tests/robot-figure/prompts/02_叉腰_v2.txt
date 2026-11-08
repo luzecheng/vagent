@@ -1,0 +1,14 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+Use the attached reference image as the exact same robot character. Keep everything identical to the reference:
+- Same head shape and size, same visor band, same body proportions, same hands and feet.
+- Same straight, neutral body shape: same chest width, same waist width, same hip width, same thigh and calf thickness. Do not make the body slimmer, curvier or more muscular.
+- Same armor plate layout, same joint positions, same ice-blue accents on joints, chest core and visor.
+- Same line style: precise contour lines on armor, tangled scribble energy lines in joints and gaps, same line thickness and glow.
+- Same camera angle (front view), same camera distance, same figure scale.
+- Same horizontal position, feet at the same height in the frame.
+- Leave clear empty margin above the highest point of the figure, including raised hands.
+- Pure solid black background, no ground, no shadow, no text. White and ice-blue only, on black. Landscape 16:9.
+
+Only change the pose:
+The robot stands confidently with its right hand on its hip, elbow pointing outward. Left arm relaxed at the side. Weight slightly on one leg.

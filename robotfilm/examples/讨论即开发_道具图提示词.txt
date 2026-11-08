@@ -1,0 +1,20 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+The attached reference image shows the drawing style of this story: fine white glowing contour lines that follow the 3D surface, tangled white scribble lines in the gaps, a soft white glow on the outlines, on a pure black background; ice-blue is the only accent color.
+
+Draw a PROPS SHEET for a 2D animation in exactly this style: nine separate objects, each a separate island with a wide empty black gap around it. No object touches or overlaps another. Every object is seen from the side or slightly from the front, standing upright on its own flat base line (as if placed on the ground). No robots, no people, no text, no letters, no numbers, no logos. Pure solid black background. Landscape 16:9. White and ice-blue only.
+
+Top row, left to right (3 objects):
+1. A desk with a large computer monitor on it, the screen filled with many rows of short glowing ice-blue lines like dense program code, and a keyboard in front. It is the widest object on the sheet.
+2. A tall stack of paper documents tied with a strap and locked with a big padlock.
+3. A wall calendar board on a stand with a round clock on top.
+
+Middle row, left to right (3 objects):
+4. An open laptop on a small stand, its screen blank and softly glowing.
+5. A large light bulb standing on a small base, glowing softly ice-blue inside.
+6. A clipboard on a small easel with a checklist of empty boxes and a round stamp beside it.
+
+Bottom row, left to right (3 objects):
+7. A small young sapling in a pot, with a few leaves.
+8. A tall stack of thick heavy books.
+9. A drafting table with a large blueprint pinned on it, showing a complex machine drawing in thin lines.
