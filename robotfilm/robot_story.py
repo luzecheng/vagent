@@ -227,7 +227,7 @@ class Film(WordsFilm):
         self.stations = []
         for i, sh in enumerate(self.shots):
             b = self.beat(i)
-            arrive = self.trav(sh["start"] + b.get("walk", 0.0))
+            arrive = self.trav(min(sh["end"], sh["start"] + b.get("walk", 0.0)))   # walking all shot: its end
             for st in b.get("stations", []):
                 name, fx, height = st[:3]
                 opts = dict(st[3]) if len(st) > 3 else {}
@@ -247,11 +247,14 @@ class Film(WordsFilm):
         for st in self.stations:
             later = [k for k in with_props if k > st["i"] and not (st.get("key") and any(
                 o["i"] == k and o.get("after") == st["key"] for o in self.stations))]
-            st["t_in"] = self.shots[st["i"]]["start"]
+            # a station built onto another ("after") is part of the same structure and comes with it: the robot
+            # may reach it before its own shot begins (down the far side of stairs it climbed in the last shot)
+            base = next((p for p in self.stations if p.get("key") == st["after"]), st) if "after" in st else st
+            st["t_in"] = self.shots[base["i"]]["start"]
             st["t_out"] = self.shots[later[0]]["start"] + 0.9 if later else 1e9
-            if "out" in st:                      # gone earlier: as the shot with that id begins
+            if "out" in st:                      # gone as the shot with that id begins (earlier or later than usual)
                 k = next(k for k, sh in enumerate(self.shots) if sh["id"] == st["out"])
-                st["t_out"] = min(st["t_out"], self.shots[k]["start"] + 0.9)
+                st["t_out"] = self.shots[k]["start"] + 0.9
 
     def shot_index(self, shot_id):
         return next(k for k, sh in enumerate(self.shots) if sh["id"] == shot_id)

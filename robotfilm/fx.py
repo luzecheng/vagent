@@ -43,14 +43,14 @@ def appear(ctx, start=0.2, end=None):
 def anchor(film, ctx, fx):
     """Screen x of something standing in the world where fx*W was when the robot arrived in this shot."""
     s = film.shots[ctx["i"]]
-    return film.trav(s["start"] + ctx["walk"]) + fx * film.W - film.trav(ctx["t"])
+    return film.trav(min(s["end"], s["start"] + ctx["walk"])) + fx * film.W - film.trav(ctx["t"])
 
 
 def anchor_shot(film, ctx, shot_id, fx):
     i = next(k for k, s in enumerate(film.shots) if s["id"] == shot_id)
     s = film.shots[i]
     w = film.beat(i).get("walk", 0.0)
-    return film.trav(s["start"] + w) + fx * film.W - film.trav(ctx["t"])
+    return film.trav(min(s["end"], s["start"] + w)) + fx * film.W - film.trav(ctx["t"])
 
 
 def joints(film, q, lift=0.0, x=None):
@@ -85,3 +85,41 @@ def fog(film, cr, ctx, start_fx=0.55, strength=1.0):
         cr.restore()
 
 
+
+
+def book(film, cr, J, glow=1.0, tilt=45):
+    """An open book held in both hands in front of the chest, tilted `tilt` degrees with its top away from the
+    robot so the pages face its eyes: the spine down the middle, a page on each side (turned a little toward the
+    viewer so the spread reads), lines of text across the pages.  It is solid: the hands behind it don't show."""
+    u = film.height / 300
+    hx, hy = film.hand(J)
+    a = math.radians(tilt)
+    s = (math.cos(a), -math.sin(a))                          # along the spine, bottom -> top
+    n = (math.sin(a), math.cos(a))                           # across the spread, as seen from the side
+    length, half, dip = 54 * u, 18 * u, 5 * u
+    b = (hx - 6 * u, hy + 4 * u)                             # bottom of the spine, resting in the hands
+    at = lambda p, k, m: (p[0] + n[0] * k + s[0] * m, p[1] + n[1] * k + s[1] * m)
+    sb, st = at(b, 0, dip), at(b, 0, length - dip)          # the spine sinks into the gutter between the pages
+    pages = []
+    for side in (1, -1):                                     # each page curves up from the spine like a wing
+        k = side * half
+        pages.append([sb, at(b, k * 0.45, -1 * u), at(b, k, 0), at(b, k, length), at(b, k * 0.45, length + 1 * u), st])
+    outline = pages[0][:4] + pages[1][3:0:-1]
+    cr.move_to(*outline[0])                                  # solid paper: hides the hands behind it
+    for p in outline[1:]:
+        cr.line_to(*p)
+    cr.close_path()
+    cr.set_source_rgb(0.05, 0.06, 0.09)
+    cr.fill_preserve()
+    cr.set_source_rgba(*ICE, 0.32 * glow)
+    cr.fill()
+    for side in (1, -1):                                     # text lines across each page
+        for j in range(2, 10):
+            m = length * j / 11
+            glow_line(cr, [at(b, side * half * 0.25, m), at(b, side * half * (0.82 - 0.2 * (j % 3 == 0)), m)], 0.9 * u, WHITE, 0.45,
+                      glow=False)
+    glow_line(cr, outline + [outline[0]], 2.6 * u, WHITE, 1.0)
+    glow_line(cr, [sb, st], 2.2 * u, WHITE, 0.9, glow=False)
+    for side in (1, -1):                                     # the cover's thickness under the outer page edge
+        k = side * (half + 2.5 * u)
+        glow_line(cr, [at(b, k, 1 * u), at(b, k, length + 1 * u)], 1.4 * u, WHITE, 0.6, glow=False)

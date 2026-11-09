@@ -24,7 +24,7 @@ from pathlib import Path
 
 import cairo
 
-from story.render import FPS, SUB_SIZE, fit_rows, quote_lines, runs
+from story.render import FPS, PORTRAIT_WORDS as PW, SUB_SIZE, fit_rows, quote_lines, runs
 from story.stage import GOLD, WHITE, circle, ramp, text, text_runs
 from story import narrate as narration
 
@@ -216,13 +216,16 @@ class Film:
         shade.add_color_stop_rgba(1, 0, 0, 0, 0)
         cr.set_source(shade)
         cr.paint()
-        rows, size = quote_lines(cr, cover["title"], W * 0.8, (140 if self.portrait else 96) * u)
-        # portrait: in the empty band above the picture; landscape: below the robot's feet, where subtitles go later
-        top = H * 0.10 if self.portrait else H * 0.86 - len(rows) * size * 1.3
+        cx = W * PW["x"] if self.portrait else W / 2
+        rows, size = quote_lines(cr, cover["title"], W * (PW["title_width"] if self.portrait else 0.8),
+                                 (140 if self.portrait else 96) * u)
+        # portrait: where the 「一笔」 film puts it (story/render.py); landscape: below the robot's feet, where
+        # subtitles go later
+        top = H * PW["title_top"] if self.portrait else H * 0.86 - len(rows) * size * 1.3
         for n, row in enumerate(rows):
-            text(cr, row, size, W / 2, top + size * 0.65 + n * size * 1.3, GOLD, a=a, weight=cairo.FONT_WEIGHT_BOLD, glow=a)
+            text(cr, row, size, cx, top + size * 0.65 + n * size * 1.3, GOLD, a=a, weight=cairo.FONT_WEIGHT_BOLD, glow=a)
         if cover.get("subtitle"):
-            text(cr, cover["subtitle"], (52 if self.portrait else 44) * u, W / 2, top + len(rows) * size * 1.3 + 40 * u,
+            text(cr, cover["subtitle"], (52 if self.portrait else 44) * u, cx, top + len(rows) * size * 1.3 + 40 * u,
                  WHITE, a=a * 0.95)
 
     def _words(self, cr, i, t):
@@ -238,14 +241,15 @@ class Film:
             if a <= 0:
                 continue
             rise = (1 - ramp(t, t0, t0 + 1.0)) * 24 * u
-            rows, size = quote_lines(cr, q["quote"], W * (0.84 if portrait else 0.86), 84 * u)
-            y = H * (0.09 if portrait else 0.10) + rise
+            rows, size = quote_lines(cr, q["quote"], W * (PW["width"] if portrait else 0.86), (92 if portrait else 84) * u)
+            y = H * (PW["quote"] if portrait else 0.10) + rise
             for n, row in enumerate(rows):
-                text(cr, row, size, W / 2, y + n * size * 1.3, GOLD, a=a, weight=cairo.FONT_WEIGHT_BOLD, glow=a)
+                text(cr, row, size, W * PW["x"] if portrait else W / 2, y + n * size * 1.3, GOLD, a=a,
+                     weight=cairo.FONT_WEIGHT_BOLD, glow=a)
         shot = self.shots[i]
         if shot.get("corner"):
             a = ramp(t, shot["start"], shot["start"] + 0.6) * (1 - ramp(t, shot["end"] - 0.4, shot["end"]))
-            x, y = (W * 0.12, H * 0.07) if portrait else (110 * u, 110 * u)
+            x, y = (W * PW["corner"][0], H * PW["corner"][1]) if portrait else (110 * u, 110 * u)
             circle(cr, x, y, 44 * u, 3 * u, GOLD, a=a)
             number = str("①②③④⑤".index(shot["corner"]) + 1)
             text(cr, number, 50 * u, x, y - 2 * u, GOLD, a=a, weight=cairo.FONT_WEIGHT_BOLD, shadow=False)
@@ -257,11 +261,12 @@ class Film:
                 if sub["start"] <= t <= sub["end"]:
                     a = ramp(t, sub["start"], sub["start"] + 0.12) * (1 - ramp(t, sub["end"] - 0.12, sub["end"]))
                     size = SUB_SIZE["portrait" if portrait else "landscape"] * u
-                    rows, size = fit_rows(cr, sub["text"], size, W * (0.84 if portrait else 0.82), keep=keys)
-                    base = H * (0.87 if portrait else 0.895) - (len(rows) - 1) * size * 1.3
+                    rows, size = fit_rows(cr, sub["text"], size, W * (PW["width"] if portrait else 0.82), keep=keys)
+                    base = H * (PW["sub"] if portrait else 0.895) - (len(rows) - 1) * size * 1.3
                     for n, row in enumerate(rows):
                         parts = [(s, GOLD if gold else WHITE) for s, gold in runs(row, keys)]
-                        text_runs(cr, parts, size, W / 2, base + n * size * 1.3, a=a, outline=0.14)
+                        text_runs(cr, parts, size, W * PW["x"] if portrait else W / 2, base + n * size * 1.3, a=a,
+                                  outline=0.14)
 
     # ---------- a frame ----------
     def draw(self, cr, t, lang):

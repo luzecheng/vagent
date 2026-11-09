@@ -219,8 +219,8 @@ class Film:
         shade.add_color_stop_rgba(1, 0.03, 0.04, 0.08, 0.0)
         cr.set_source(shade)
         cr.paint()
-        cx = st.W / 2 if not portrait else st.W * 0.46
-        max_w = st.W * (0.78 if portrait else 0.8)
+        cx = st.W / 2 if not portrait else st.W * PORTRAIT_WORDS["x"]
+        max_w = st.W * (PORTRAIT_WORDS["title_width"] if portrait else 0.8)
         sub, sub_size, sub_rows = cover.get("subtitle", ""), (48 if portrait else 44) * u, []
         if sub:
             sub_rows = [sub]
@@ -237,7 +237,7 @@ class Film:
             if head_top - height >= min_top or size < 60 * u:
                 break
             size *= 0.92
-        top = max(min_top, min(st.H * (0.20 if portrait else 0.22), head_top - height))
+        top = max(min_top, min(st.H * (PORTRAIT_WORDS["title_top"] if portrait else 0.22), head_top - height))
         for n, row in enumerate(rows):
             text(cr, row, size, cx, top + size * 0.65 + n * size * 1.3, GOLD, a=a, weight=cairo.FONT_WEIGHT_BOLD,
                  glow=a)
@@ -260,16 +260,16 @@ class Film:
             if a <= 0:
                 continue
             rise = (1 - ramp(t, t0, t0 + 1.0)) * 24 * u
-            lines = quote_lines(cr, q["quote"], W * (0.80 if portrait else 0.86), 92 * u)
+            lines = quote_lines(cr, q["quote"], W * (PORTRAIT_WORDS["width"] if portrait else 0.86), 92 * u)
             size = lines[1]
-            y = Hh * (0.24 if portrait else 0.20) + rise
+            y = Hh * (PORTRAIT_WORDS["quote"] if portrait else 0.20) + rise
             for n, s in enumerate(lines[0]):
-                text(cr, s, size, W / 2 if not portrait else W * 0.46, y + n * size * 1.3, GOLD, a=a,
+                text(cr, s, size, W / 2 if not portrait else W * PORTRAIT_WORDS["x"], y + n * size * 1.3, GOLD, a=a,
                      weight=cairo.FONT_WEIGHT_BOLD, glow=a)
         # corner number (①②③)
         if shot.get("corner"):
             a = ramp(t, shot["start"], shot["start"] + 0.6) * (1 - ramp(t, shot["end"] - 0.4, shot["end"]))
-            x, y = (110 * u, 110 * u) if not portrait else (W * 0.12, Hh * 0.19)
+            x, y = (110 * u, 110 * u) if not portrait else (W * PORTRAIT_WORDS["corner"][0], Hh * PORTRAIT_WORDS["corner"][1])
             circle(cr, x, y, 44 * u, 3 * u, GOLD, a=a)
             mark = shot["corner"]
             number = str("①②③④⑤⑥⑦⑧⑨".index(mark) + 1) if mark in "①②③④⑤⑥⑦⑧⑨" else mark
@@ -283,12 +283,12 @@ class Film:
                 if sub["start"] <= t <= sub["end"]:           # fades stay inside the line's own time
                     a = ramp(t, sub["start"], sub["start"] + 0.12) * (1 - ramp(t, sub["end"] - 0.12, sub["end"]))
                     size = (SUB_SIZE["portrait"] if portrait else SUB_SIZE["landscape"]) * u
-                    max_w = W * (0.80 if portrait else 0.82)
+                    max_w = W * (PORTRAIT_WORDS["width"] if portrait else 0.82)
                     rows, size = fit_rows(cr, sub["text"], size, max_w, keep=keys)
-                    base = Hh * (0.775 if portrait else 0.895) - (len(rows) - 1) * size * 1.3
+                    base = Hh * (PORTRAIT_WORDS["sub"] if portrait else 0.895) - (len(rows) - 1) * size * 1.3
                     for n, row in enumerate(rows):
                         parts = [(s, GOLD if gold else WHITE) for s, gold in runs(row, keys)]
-                        text_runs(cr, parts, size, W * (0.46 if portrait else 0.5), base + n * size * 1.3, a=a,
+                        text_runs(cr, parts, size, W * (PORTRAIT_WORDS["x"] if portrait else 0.5), base + n * size * 1.3, a=a,
                                   outline=0.14)
         # vignette and the fade in / out at the ends
         v = cairo.RadialGradient(W / 2, Hh / 2, min(W, Hh) * 0.35, W / 2, Hh / 2, max(W, Hh) * 0.75)
@@ -320,6 +320,11 @@ def shot_at(shots, t):
 
 
 SUB_SIZE = {"landscape": 60, "portrait": 68}   # subtitle size in px at 1080: large enough to read on a phone
+# where words go in portrait (视频号), as shares of the frame, shared with the robot film (robotfilm/compose.py):
+# centred a little left of the middle, clear of the buttons on the right; the subtitles high enough to stay
+# clear of the caption bar at the bottom, the gold quote low enough to clear the top bar
+PORTRAIT_WORDS = {"x": 0.46, "width": 0.80, "sub": 0.775, "quote": 0.24, "corner": (0.12, 0.19), "title_top": 0.20,
+                  "title_width": 0.78}
 NO_START = "》」』”’）)、，。：；？！?!:;,."
 NO_END = "《「『“‘（("
 
