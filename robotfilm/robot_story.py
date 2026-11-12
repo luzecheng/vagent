@@ -19,6 +19,7 @@ import random
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from functools import lru_cache
 from multiprocessing import get_context
 from pathlib import Path
 
@@ -41,6 +42,10 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = Path(__file__).parent / "assets"      # the robot as Codex drew it (see tests/robot-figure, robot-puppet)
 SIDE_PARTS = ASSETS / "side_parts.png"
 FRONT = [ASSETS / "front_00_stand.png", ASSETS / "front_03_arm_shoulder.png", ASSETS / "front_01_hand_up.png"]
+ANGLES = ASSETS / "angles"       # the robot from other camera angles (Codex; prompts in examples/角度图提示词, -i front_00)
+ANGLE_SCALE = {"back": 1.0, "three_quarter": 1.0, "low": 1.35, "high": 0.8}   # x the robot's height
+TILT = {"low": 0.10, "high": -0.10}   # camera tilt as a share of the frame height: up shows sky, down ground
+ANGLE_FADE = 0.7                 # s: another angle dissolves in and out, never a hard cut (used once or twice a film)
 PROPS = ["city", "terminal", "factory", "scale", "bench", "stairs", "book", "tablet", "bag"]
 FORMATS = {"zh": ("portrait", 1080, 1920), "en": ("landscape", 1920, 1080)}
 BLEND = 0.3                      # walk <-> action pose blending
@@ -177,6 +182,53 @@ def orb(cr, x, y, r, a=1.0, col=ICE):
     cr.fill()
 
 
+class Angles:
+    """The robot from other angles (back, three-quarter, low, high: full figures standing on their feet;
+    over_shoulder: the back of its head and shoulder, cut by the left and bottom edges of its drawing)."""
+
+    def __init__(self, folder: Path):
+        self.sprites = {}
+        for p in sorted(Path(folder).glob("*.png")):
+            rgb = np.asarray(Image.open(p).convert("RGB")).astype(np.float32)
+            ys, xs = np.where(rgb.max(2) > 60)
+            top, feet = ys.min(), ys.max()
+            low = ys > feet - 12
+            self.sprites[p.stem] = (_surface(rgb, cutout(rgb)), top, feet, (xs[low].min() + xs[low].max()) / 2,
+                                    rgb.shape[0])
+
+    def stand(self, cr, name, x, ground, height, t, alpha=1.0):
+        """Feet at (x, ground), `height` px tall, breathing a little."""
+        surf, top, feet, fx, _ = self.sprites[name]
+        k = height / (feet - top)
+        cr.save()
+        cr.translate(x, ground)
+        cr.scale(k, k * (1 + 0.008 * math.sin(t * 2.1)))
+        cr.translate(-fx, -feet)
+        cr.set_source_surface(surf, 0, 0)
+        cr.get_source().set_filter(cairo.FILTER_GOOD)
+        cr.paint_with_alpha(alpha)
+        cr.restore()
+
+    def over_shoulder(self, cr, W, H, bottom, height, t, alpha=1.0, shift=0.0):
+        """The over-the-shoulder close-up in the bottom-left foreground: its drawing's left edge on the frame's
+        left edge, its bottom edge at `bottom`, `height` px tall; it sways a hair, like a held camera."""
+        surf, _, _, _, ih = self.sprites["over_shoulder"]
+        k = height / ih
+        cr.save()
+        cr.translate(shift - 6 + 4 * math.sin(t * 0.7), bottom - height + 3 * math.sin(t * 0.9))
+        cr.scale(k, k)
+        cr.set_source_surface(surf, 0, 0)
+        cr.get_source().set_filter(cairo.FILTER_GOOD)
+        cr.paint_with_alpha(alpha)
+        cr.restore()
+
+
+@lru_cache(maxsize=None)
+def _angles(folder: str) -> Angles:
+    """Cut out once per process: every Film (both formats, every render worker) shares them."""
+    return Angles(Path(folder))
+
+
 class Film(WordsFilm):
     """One language, one format.  Words (cover, quotes, subtitles, ①②③) come from compose.Film."""
 
@@ -186,6 +238,12 @@ class Film(WordsFilm):
         self.tl, self.shots, self.lang = timeline, timeline["shots"], lang
         self.ep = beats
         self.beats = beats.BEATS
+        # while it plays only the subtitles carry words (the user's choice, 2026-11-12): no sky words or gold quotes
+        # unless an episode asks with SKY_WORDS / QUOTES = True; the opening title card stays (COVER_TITLE = False
+        # to drop it)
+        self.sky_words = getattr(beats, "SKY_WORDS", False)
+        self.show_quotes = getattr(beats, "QUOTES", False)
+        self.show_cover = getattr(beats, "COVER_TITLE", True)
         # robot (default): dark blue-black silhouettes with thin white outlines; story: the 「一笔」 night world
         self.world = StoryWorld(W, H) if world == "story" else World(W, H, palette="color" if world == "color" else "night")
         self.walker = Walker(load_side_parts(SIDE_PARTS))
@@ -194,6 +252,7 @@ class Film(WordsFilm):
                                 getattr(beats, "SOLID_PROPS", False))     # beats: SOLID_PROPS = True for colour props
         self.height = (250 if self.portrait else 300) * self.u   # portrait: smaller next to the larger mountains
         self.front = Front(FRONT, self.height * 1.02)
+        self.angles = _angles(str(ANGLES))
         self.hip_x = W * ROBOT_X
         self.fg = _foreground(W, H, self.u) if world == "color" else None   # blurred grass passing close by
         self.ground = self.world.horizon
@@ -328,6 +387,8 @@ class Film(WordsFilm):
             b, dur = self.beat(i), s["end"] - s["start"]
             if b.get("cam") in CAM_SIZES:
                 name = b["cam"]
+            elif b.get("angle") == "over_shoulder":   # looks past the robot at the place: must show it whole
+                name = "full"
             elif walks[i] or b.get("stations"):
                 # shows the place; but after two full shots, a long one pushes in once the robot is there
                 settled = dur - min(b.get("walk", 0.0), dur)
@@ -360,7 +421,7 @@ class Film(WordsFilm):
                 want = self._full(CAM_TALK[talk % 2])
                 talk += 1
             else:
-                want = self._on_robot(name)
+                want = self._on_robot(name, ANGLE_SCALE.get(self.beat(i).get("angle"), 1.0))
             s = self.shots[i]
             # never faster than CAM_RATE: smooth() peaks at 1.5x its mean speed, so over a shot of d seconds the
             # zoom may change by at most exp(CAM_RATE * d / 1.5); a bigger change stops part of the way
@@ -377,10 +438,11 @@ class Film(WordsFilm):
         fx, fy = self.W * 0.5, (top + self.ground) / 2
         return (z, fx * (1 - z), fy * (1 - z))
 
-    def _on_robot(self, name):
-        """Closer on the robot, its head kept on the left-third line and in the upper part of the frame."""
+    def _on_robot(self, name, scale=1.0):
+        """Closer on the robot, its head kept on the left-third line and in the upper part of the frame
+        (`scale`: how tall it is drawn in this shot, e.g. larger from a low angle)."""
         z = CAM_SIZES[name][0 if self.portrait else 1]
-        hx, hy = self.hip_x, self.ground - self.height * 0.92
+        hx, hy = self.hip_x, self.ground - self.height * 0.92 * scale
         tx, ty = self.W * ROBOT_X, self.H * (0.40 if self.portrait else 0.36)
         return (z, tx - z * hx, ty - z * hy)
 
@@ -397,6 +459,25 @@ class Film(WordsFilm):
 
     def zoom(self, t):
         return self.camera(t)[0]
+
+    def angle_mix(self, t):
+        """(angle, k): which other view of the robot shows at t and how far it has dissolved in (0..1). An angle
+        shot dissolves in over its first ANGLE_FADE s and back out over the first ANGLE_FADE s of the next shot:
+        no hard cuts."""
+        i = self.shot_at(t)
+        lt = t - self.shots[i]["start"]
+        cur = self.beat(i).get("angle")
+        prev = self.beat(i - 1).get("angle") if i > 0 else None
+        if cur:
+            return cur, (1.0 if prev == cur else smooth(min(1.0, lt / ANGLE_FADE)))
+        if prev and lt < ANGLE_FADE:
+            return prev, 1 - smooth(lt / ANGLE_FADE)
+        return None, 0.0
+
+    def tilt(self, t):
+        """Vertical shift of the whole picture for low / high angles, easing in and out with the dissolve."""
+        name, k = self.angle_mix(t)
+        return TILT.get(name, 0.0) * self.H * k
 
     def shot_index(self, shot_id):
         return next(k for k, sh in enumerate(self.shots) if sh["id"] == shot_id)
@@ -464,6 +545,9 @@ class Film(WordsFilm):
         travel = self.view_trav(t)
         rx = self.robot_x(t)
         cam = self.camera(t)
+        angle, ak = self.angle_mix(t)
+        cr.save()                                 # low / high angle: the whole scene tilts (not the subtitles)
+        cr.translate(0, self.tilt(t))
         self.world.draw(cr, travel, t, cam)      # far layers follow the camera only partly (depth)
         cr.save()                                 # the camera moves the props, the robot and what it does ...
         z, ax, ay = cam
@@ -520,8 +604,12 @@ class Film(WordsFilm):
         if front is not None and lt >= front[0]:
             self._front(cr, ctx, front)
             J = None
-        else:
-            J = self.robot(cr, rx, self.ground - lift, q, chest=extra.get("chest", 1.0))
+        else:                                     # the side view, dissolving into another angle when there is one
+            J = self.robot(cr, rx, self.ground - lift, q, alpha=1 - ak, chest=extra.get("chest", 1.0)) if ak < 1 else None
+            if angle and angle != "over_shoulder" and ak > 0:
+                self.angles.stand(cr, angle, rx, self.ground - lift, self.height * ANGLE_SCALE[angle], t, ak)
+            if ak > 0:
+                J = None
         ctx["J"] = J
         if J is not None and b.get("hold"):      # the robot holds a prop: hold=(prop, height in design px[, from s])
             name, hh, *since = b["hold"]
@@ -531,6 +619,12 @@ class Film(WordsFilm):
         if fx and not b.get("fx_behind"):
             fx(self, cr, ctx)
         cr.restore()                              # ... but not the subtitles and quotes: they stay put
+        cr.restore()                              # (the tilt)
+        if angle == "over_shoulder" and ak > 0:    # the robot is the camera's shoulder, in front, below
+            # its drawing is cut by its own left and bottom edges: put those beyond the frame's edges
+            # (portrait: smaller and further off the left edge, so the place still fills most of the frame)
+            self.angles.over_shoulder(cr, self.W, self.H, self.H + 8 * self.u, self.H * (0.46 if self.portrait else 0.62),
+                                      t, ak, shift=-self.W * (0.12 if self.portrait else 0.0))
         if b.get("drift"):                       # leaves or paper drifting across a still shot, near the lens
             self._drift(cr, b["drift"], lt, t)
         self._foreground(cr, t)

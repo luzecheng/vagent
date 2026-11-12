@@ -357,3 +357,68 @@ def test_foreground_grass_only_comes_and_goes_at_the_frame_edges(tmp_path):
 def test_no_grass_on_short_walks(tmp_path):
     film = _shot_film(tmp_path, dict(walk=1.2))
     assert not any(film.foreground_clumps(f / FPS) for f in range(int(film.tl["duration"] * FPS)))
+
+
+def test_robot_films_show_only_subtitles_and_the_title_card(tmp_path):
+    import cairo
+    from robotfilm.fx import label
+    film = _talky_film(tmp_path)
+    assert not film.sky_words and not film.show_quotes
+    assert film.show_cover, "the opening title card stays"
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+    film.cr = cairo.Context(surf)
+    label(film, "不要的字", 540, 300, 1.0, 60)
+    surf.flush()
+    assert np.ndarray((1920, 1080, 4), np.uint8, surf.get_data())[..., 3].max() == 0, "no sky words"
+    on = _talky_film(tmp_path / "on")
+    on.ep.SKY_WORDS = True
+    assert Film(tmp_path / "on", on.tl, 1080, 1920, on.ep, "zh").sky_words, "an episode can still ask for them"
+
+
+def _angle_film(tmp_path, angle):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots = [{"id": 1, "start": 0.0, "end": 5.0, "voice_end": 4.7, "subs": []},
+             {"id": 2, "start": 5.0, "end": 10.0, "voice_end": 9.7, "subs": []}]
+    mod = types.SimpleNamespace(BEATS={2: dict(angle=angle)} if angle else {}, MACHINE=None, SOLID_PROPS=True,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": 10.0, "shots": shots}, 1080, 1920, mod, "zh", "color")
+
+
+def test_angle_drawings_are_all_there():
+    from robotfilm.robot_story import ANGLES, Angles
+    a = Angles(ANGLES)
+    assert set(a.sprites) == {"back", "three_quarter", "low", "high", "over_shoulder"}
+
+
+def test_an_angle_shot_shows_the_robot_from_that_angle(tmp_path):
+    side, back = _angle_film(tmp_path, None), _angle_film(tmp_path / "b", "back")
+    x0, x1 = int(side.hip_x - side.height * 0.4), int(side.hip_x + side.height * 0.4)
+    y0, y1 = int(side.ground - side.height * 1.3), int(side.ground + 10)
+    region = lambda f: _frame(f, 7.5)[y0:y1, x0:x1]
+    assert np.abs(region(back) - region(side)).sum() > 50000
+    assert _angle_film(tmp_path / "o", "over_shoulder").shot_size(1) == "full", "over the shoulder shows the place"
+
+
+def test_low_and_high_angles_tilt_the_camera(tmp_path):
+    low, high, flat = (_angle_film(tmp_path / n, n) for n in ("low", "high", "back"))
+    assert low.tilt(7.5) > 0.05 * low.H, "looking up: the horizon drops, more sky"
+    assert high.tilt(7.5) < -0.05 * high.H, "looking down: the horizon rises, more ground"
+    assert flat.tilt(7.5) == 0 and low.tilt(2.0) == 0
+
+
+def test_shot_list_keeps_angle_changes_rare():
+    from robotfilm.shotlist import warnings
+    rs = [{"id": k, "size": ("full", "medium")[k % 2], "camera": "push in", "moves": ["walks"],
+           "angle": "back" if k in (2, 4, 6) else "side"} for k in range(1, 9)]
+    assert any("angle" in x for x in warnings(rs)), "three angle changes are too many"
+    rs[5]["angle"] = "side"
+    assert not any("angle" in x for x in warnings(rs)), "two are fine"
+
+
+def test_angle_changes_dissolve_instead_of_cutting(tmp_path):
+    film = _angle_film(tmp_path, "low")
+    ks = [film.angle_mix(f / FPS)[1] for f in range(int(film.tl["duration"] * FPS))]
+    assert max(ks) == 1.0 and ks[0] == 0.0
+    assert max(abs(b - a) for a, b in zip(ks, ks[1:])) < 0.1, "fades over many frames, no hard cut"
+    tilts = [film.tilt(f / FPS) for f in range(int(film.tl["duration"] * FPS))]
+    assert max(abs(b - a) for a, b in zip(tilts, tilts[1:])) < 0.01 * film.H, "the tilt eases in and out"

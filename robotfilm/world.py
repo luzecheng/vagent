@@ -182,7 +182,7 @@ class World:
             g.add_color_stop_rgb(0.58, *c["sky_low"])
         g.add_color_stop_rgb(1, *c["sky_low"])
         cr.set_source(g)
-        cr.rectangle(0, 0, W, H)
+        cr.rectangle(0, -H, W, 3 * H)          # beyond the frame too: a tilted camera never shows an edge
         cr.fill()
         with _through(cr, cam, 0.1):
             share = c.get("star_share", 1.0)
@@ -288,7 +288,7 @@ class World:
         g.add_color_stop_rgb(0, *c["ground_top"])
         g.add_color_stop_rgb(1, *c["ground_low"])
         cr.set_source(g)
-        cr.rectangle(0, hz, W, H - hz)
+        cr.rectangle(0, hz, W, 2 * H - hz)     # past the bottom: room for a camera tilted down
         cr.fill()
         # soft sheen just below the horizon, under the moon's side of the sky
         cr.save()

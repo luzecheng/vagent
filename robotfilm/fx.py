@@ -64,7 +64,7 @@ def label_width(film, s, size=40):
 def label(film, s, x, y, a, size=40, col=WHITE):
     """Sky text with a dark outline, so it reads on the dark sky and on the light clouds of the colour night.
     It comes in growing a little and rising into place as it fades in."""
-    if a <= 0 or not s:
+    if a <= 0 or not s or not getattr(film, "sky_words", True):
         return
     with screen_space(film.cr):
         _label(film, s, x, y, a, size, col)

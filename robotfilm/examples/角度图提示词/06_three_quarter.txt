@@ -1,0 +1,12 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+Use the attached reference image as the exact same robot character. Keep everything identical to the reference:
+- Same head shape and size, same visor band, same body proportions, same hands and feet.
+- Same straight, neutral body shape: same chest width, same waist width, same hip width, same thigh and calf thickness.
+- Same armor plate layout, same joint positions, same ice-blue accents on joints, chest core and visor.
+- Same line style: precise contour lines on armor, tangled scribble energy lines in joints and gaps, same line thickness and glow.
+- Pure solid black background, no ground, no shadow, no text. White and ice-blue only, on black. Landscape 16:9.
+- Leave clear empty black margin around the figure unless told otherwise.
+
+Only change the camera angle and pose as described:
+THREE-QUARTER FRONT VIEW: the robot is turned about 35 degrees to its left (to the viewer's right), so we see its front and a bit of its right side; visor visible. It stands upright, arms relaxed, a calm stance. Full body, the figure about 80% of the frame height, centred, feet near the bottom with a little margin (same as the reference).

@@ -229,12 +229,16 @@ class Film:
             text(cr, cover["subtitle"], (52 if self.portrait else 44) * u, cx, top + len(rows) * size * 1.3 + 40 * u,
                  WHITE, a=a * 0.95)
 
+    show_cover = True        # the title card over the first seconds
+    show_quotes = True       # the gold quote lines
+
     def _words(self, cr, i, t):
         W, H, u = self.W, self.H, self.u
         portrait = self.portrait
-        self._cover(cr, t)
+        if self.show_cover:
+            self._cover(cr, t)
         for j in (i - 1, i):
-            if j < 0 or not self.shots[j].get("quote"):
+            if not self.show_quotes or j < 0 or not self.shots[j].get("quote"):
                 continue
             q = self.shots[j]
             t0, t1 = q["quote_at"], max(q["end"], q["quote_at"] + 2.6)

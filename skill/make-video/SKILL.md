@@ -54,7 +54,10 @@ Do not stop for storyboard confirmation (the user wants the video made directly)
 3. **Beats.** Write `<folder>/robot2/beats.py`: `PROPS` (the nine names in sheet order), `SOLID_PROPS = True` (colour
    props are cut out as solid objects), `MACHINE = None`, and
    `BEATS[shot id]` = walk seconds, pose, `stations` (props the robot stops at; `out` to remove them early),
-   `fx` (code-drawn bubbles, labels, charts, coins…). Words on screen come from the script only.
+   `fx` (code-drawn bubbles, charts, coins…). **No words in the picture while it plays**: the user wants only
+   the subtitles (2026-11-12) — no sky labels, no gold quotes, no words in bubbles (the renderer hides labels and
+   quotes unless beats set `SKY_WORDS` / `QUOTES = True`, which needs the user's request). The opening title card
+   (cover title) stays. Tell each shot with props, actions, light and the camera instead.
    Make it alive — use these wherever the script allows (the user wants the best video code can make):
    - station options: `glow=True` or `(r,g,b)` for anything that gives light (fire, screen, lamp, open door),
      `flicker=True` for fire; `smoke=True` (or the height share it rises from) for fire, pots, coffee;
@@ -67,10 +70,14 @@ Do not stop for storyboard confirmation (the user wants the video made directly)
    - entering and leaving the frame: `enter=True` with a long `walk` (3.5–4 s, only on shots whose narration is
      long enough) makes the camera wait at the mark while the robot walks in from the left; `leave=<s>` makes
      it walk off to the right for the last s of the shot (pair a leave with an enter on the next shot: a cut);
+   - camera angles (sparingly): `angle=` shows another view of the robot on a still shot (no walk, no
+     enter/leave, no hold): `"low"` (looking up: resolve; tilts to more sky), `"over_shoulder"` (past the back
+     of its head at what it faces), `"back"`, `"three_quarter"`, `"high"`. **At most two per film**, on the
+     strongest lines — the user found more unnatural (2026-11-12); they dissolve in and out over 0.7 s;
    - still shots need something moving: `drift="leaves"` or `"paper"` blows a few across the frame; the colour
      night passes blurred grass in front of the lens on longer walks only (≥ ~0.2 frame widths, every other
      one): it comes in at the right edge and leaves at the left within the walk, never fades (automatic);
-   - sky words via `fx.label` stay fixed on screen while the camera moves; draw anything that belongs to them
+   - (only if an episode turns SKY_WORDS on) sky words via `fx.label` stay fixed on screen while the camera moves; draw anything that belongs to them
      (a strike-through, an arrow between two labels) inside `with fx.screen_space(cr):`, and measure labels
      with `fx.label_width`. Things standing in the world (bubbles over the robot, effects at a prop) are
      drawn normally and move with the camera.
