@@ -33,20 +33,38 @@ def sky(film, fx, fy):
     return fx * film.W, top + fy * (film.ground - film.height * 1.15 - top)
 
 
+def label_scale(film):
+    """Sky words are drawn larger than their nominal size: 1.5x on the phone (portrait), 1.25x in landscape, so
+    they read at a glance on a small screen."""
+    return 1.5 if film.portrait else 1.25
+
+
+def label_width(film, s, size=40):
+    """Width in px of a fully shown label (for strike-through lines and the like)."""
+    cr = film.cr
+    cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+    cr.set_font_size(size * film.u * label_scale(film))
+    return cr.text_extents(s).x_advance
+
+
 def label(film, s, x, y, a, size=40, col=WHITE):
-    """Sky text with a dark outline, so it reads on the dark sky and on the light clouds of the colour night."""
-    if a > 0 and s:
-        cr, px = film.cr, size * film.u
-        cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-        cr.set_font_size(px)
-        ext = cr.text_extents(s)
-        cr.move_to(x - ext.x_advance / 2, y + px * 0.35)
-        cr.text_path(s)
-        cr.set_line_join(cairo.LINE_JOIN_ROUND)
-        cr.set_line_width(px * 0.16)
-        cr.set_source_rgba(0.03, 0.04, 0.10, 0.75 * a)
-        cr.stroke()
-    text(film.cr, s, size * film.u, x, y, col, a=a, weight=1)
+    """Sky text with a dark outline, so it reads on the dark sky and on the light clouds of the colour night.
+    It comes in growing a little and rising into place as it fades in."""
+    if a <= 0 or not s:
+        return
+    cr = film.cr
+    px = size * film.u * label_scale(film) * (0.88 + 0.12 * a)
+    y += (1 - a) * 16 * film.u
+    cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+    cr.set_font_size(px)
+    ext = cr.text_extents(s)
+    cr.move_to(x - ext.x_advance / 2, y + px * 0.35)
+    cr.text_path(s)
+    cr.set_line_join(cairo.LINE_JOIN_ROUND)
+    cr.set_line_width(px * 0.16)
+    cr.set_source_rgba(0.03, 0.04, 0.10, 0.75 * a)
+    cr.stroke()
+    text(cr, s, px, x, y, col, a=a, weight=1)
 
 
 def appear(ctx, start=0.2, end=None):

@@ -43,6 +43,8 @@ FRONT = [ASSETS / "front_00_stand.png", ASSETS / "front_03_arm_shoulder.png", AS
 PROPS = ["city", "terminal", "factory", "scale", "bench", "stairs", "book", "tablet", "bag"]
 FORMATS = {"zh": ("portrait", 1080, 1920), "en": ("landscape", 1920, 1080)}
 BLEND = 0.3                      # walk <-> action pose blending
+CAM_TALK = (1.05, 1.11)          # camera push-in while the robot talks, alternating shot by shot
+CAM_QUOTE = 1.16                 # closer on quote shots
 smooth = lambda k: k * k * (3 - 2 * k)
 
 
@@ -259,6 +261,41 @@ class Film(WordsFilm):
             if "out" in st:                      # gone as the shot with that id begins (earlier or later than usual)
                 k = next(k for k, sh in enumerate(self.shots) if sh["id"] == st["out"])
                 st["t_out"] = self.shots[k]["start"] + 0.9
+        self._plan_camera()
+
+    # ---------- camera ----------
+    def _plan_camera(self):
+        """How close the camera is at the end of each shot.  It is wide (1.0) when the robot arrives somewhere,
+        then slowly pushes in while it talks: a little or a little more in turn, so a run of talking shots
+        breathes instead of freezing, closest on quote shots.  A beat can set its own with cam=<zoom>."""
+        self.cam_in, self.cam_to = [], []
+        z, talk = 1.0, 0
+        for i, s in enumerate(self.shots):
+            b = self.beat(i)
+            if "cam" in b:
+                to = b["cam"]
+            elif s.get("quote"):
+                to = CAM_QUOTE
+            else:
+                to = CAM_TALK[talk % 2]
+                talk += 1
+            self.cam_in.append(z)
+            self.cam_to.append(to)
+            z = to
+        top = self.H * (0.13 if self.portrait else 0.10)
+        self.cam_focus = (self.W * 0.48, (top + self.ground) / 2)   # between the robot and its props, mid-sky
+
+    def zoom(self, t):
+        i = self.shot_at(t)
+        s = self.shots[i]
+        lt, dur = t - s["start"], s["end"] - s["start"]
+        z0, to = self.cam_in[i], self.cam_to[i]
+        w = min(self.beat(i).get("walk", 0.0), dur)
+        if w > 0:
+            if lt < w:                            # walking: back out to the wide shot by the time it stops
+                return z0 + (1.0 - z0) * smooth(lt / w)
+            z0, lt, dur = 1.0, lt - w, dur - w
+        return z0 + (to - z0) * smooth(min(1.0, lt / dur)) if dur > 0 else to
 
     def shot_index(self, shot_id):
         return next(k for k, sh in enumerate(self.shots) if sh["id"] == shot_id)
@@ -324,6 +361,12 @@ class Film(WordsFilm):
         lt = t - s["start"]
         b = self.beat(i)
         travel = self.trav(t)
+        cr.save()                                 # the camera moves the world, props, robot and sky words ...
+        fx_, fy_ = self.cam_focus
+        z = self.zoom(t)
+        cr.translate(fx_, fy_)
+        cr.scale(z, z)
+        cr.translate(-fx_, -fy_)
         self.world.draw(cr, travel, t)
         for st in self.stations:
             x = st["x"] - travel
@@ -357,6 +400,7 @@ class Film(WordsFilm):
         ctx["J"] = J
         if fx and not b.get("fx_behind"):
             fx(self, cr, ctx)
+        cr.restore()                              # ... but not the subtitles and quotes: they stay put
         self._words(cr, i, t)
 
     def _front(self, cr, ctx, front):

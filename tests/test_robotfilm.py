@@ -48,3 +48,41 @@ def test_the_robot_never_climbs_stairs_that_are_not_shown(tmp_path):
                 on_down += st.get("flip", False) and t < film.shots[1]["start"]
                 assert st["t_in"] <= t <= st["t_out"], (t, st["name"], st["t_in"], st["t_out"])
     assert on_down, "the test should have the robot on the down stairs during shot 1"
+
+
+def _talky_film(tmp_path):
+    """Shot 1 talks, 2 walks in then talks, 3 talks, 4 is a quote shot."""
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots, t = [], 0.0
+    for i, d in enumerate((5.0, 6.0, 4.0, 5.0), 1):
+        s = {"id": i, "start": t, "end": t + d, "voice_end": t + d - 0.3}
+        if i == 4:
+            s["quote"] = "金句"
+        shots.append(s)
+        t += d
+    mod = types.SimpleNamespace(BEATS={2: dict(walk=1.5)}, MACHINE=None,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": t, "shots": shots}, 1080, 1920, mod, "zh")
+
+
+def test_camera_moves_smoothly_and_never_shows_past_the_frame(tmp_path):
+    film = _talky_film(tmp_path)
+    zs = [film.zoom(f / FPS) for f in range(int(film.tl["duration"] * FPS))]
+    assert min(zs) >= 1.0
+    assert max(zs) > 1.04, "the camera should push in while the robot talks"
+    assert max(abs(b - a) for a, b in zip(zs, zs[1:])) < 0.01, "no jumps at shot changes"
+
+
+def test_camera_is_wide_when_the_robot_arrives_and_closest_on_quotes(tmp_path):
+    film = _talky_film(tmp_path)
+    s2, s4 = film.shots[1], film.shots[3]
+    assert abs(film.zoom(s2["start"] + 1.5) - 1.0) < 1e-6
+    talk_peaks = [film.zoom(s["end"] - 1e-3) for s in film.shots[:3]]
+    assert film.zoom(s4["end"] - 1e-3) > max(talk_peaks)
+
+
+def test_sky_words_are_bigger_on_a_phone(tmp_path):
+    from robotfilm.fx import label_scale
+    film = _talky_film(tmp_path)
+    wide = types.SimpleNamespace(portrait=False)
+    assert label_scale(film) >= 1.5 and 1.2 <= label_scale(wide) < label_scale(film)
