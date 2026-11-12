@@ -12,7 +12,7 @@ There are three styles:
 
 | Style | When | Output |
 |---|---|---|
-| **Robot** (default) | always, unless the user asks otherwise | the white-line robot walks one continuous road through the blue-black silhouette world (`robotfilm`), stops at Codex-drawn props and acts each shot out; Chinese portrait `robot2/robot2_portrait.mp4`, English landscape `robot2/robot2_en_landscape.mp4`, covers. See **2R** |
+| **Robot** (default) | always, unless the user asks otherwise | the white-line robot walks one continuous road through the user's favourite night in colour (navy sky, soft lit clouds, green hills; `robotfilm`, the default world since 2026-11-11), stops at Codex-drawn full-colour props and acts each shot out; Chinese portrait `robot2/robot2_portrait.mp4`, English landscape `robot2/robot2_en_landscape.mp4`, covers. See **2R** |
 | **Story** | the user asks for 线条人 / 一笔 / 原来的故事版 | line-art story animation: Chinese in portrait 1080×1920 (`story_portrait.mp4`, for 视频号) and English in landscape 1920×1080 (`story_en_landscape.mp4`, for X), covers. This is the renderer's default, no flag needed. Both formats in both languages only when the user asks for it (横竖屏都要 / 也要横屏 / English portrait): add `--portrait` to the draft and render commands; one format only: `--only landscape` or `--only portrait` |
 | **Classic** | the user asks for 原来的风格 / 信息图 / 经典版 | `zh_shipinhao.mp4`, `en_x_9x16.mp4`, covers, report |
 
@@ -48,17 +48,19 @@ Do not stop for storyboard confirmation (the user wants the video made directly)
    `<vagent>/.venv/bin/python -m story.render <folder> --stills` in the background: it only synthesizes the voice
    and writes `timeline.json` / `timeline_en.json`, `build/voice*.wav`, `qa.md` (the slow part).
 2. **Props.** Meanwhile have Codex draw one props sheet of nine objects for this episode (3 rows × 3, separate
-   islands on black, white glowing lines + ice-blue, no text) — copy `robotfilm/examples/讨论即开发_道具图提示词.txt`
-   and change only the object list; reference image: the last episode's props sheet. Call
-   `codex exec --skip-git-repo-check -s read-only -i <ref> - < prompt`, copy the new image from
+   islands on black, full natural colour, no text) — copy `robotfilm/examples/彩色道具图提示词.txt` and change only
+   the object list. Call `codex exec --skip-git-repo-check -s read-only - < prompt` (no reference image needed), copy the new image from
    `~/.codex/generated_images/` (diff the folder before/after) to `<folder>/robot2/frames/道具图_v1.png`. Look at it.
-3. **Beats.** Write `<folder>/robot2/beats.py`: `PROPS` (the nine names in sheet order), `MACHINE = None`, and
+3. **Beats.** Write `<folder>/robot2/beats.py`: `PROPS` (the nine names in sheet order), `SOLID_PROPS = True` (colour
+   props are cut out as solid objects), `MACHINE = None`, and
    `BEATS[shot id]` = walk seconds, pose, `stations` (props the robot stops at; `out` to remove them early),
    `fx` (code-drawn bubbles, labels, charts, coins…). Words on screen come from the script only.
 4. **Check sheets, then render.** `.venv/bin/python -m robotfilm.robot_story <folder> --sheet` (seconds) writes
    `robot2/review/sheet_*.png`: look at both, fix overlaps / props piling up / unreadable labels, repeat. After the
    voice is done: `.venv/bin/python -m robotfilm.robot_story <folder>` in the background (~3–4 min). Extract a few
-   frames with ffmpeg and look at them. `--world story` uses the 「一笔」 forested world instead.
+   frames with ffmpeg and look at them. The colour night is the default; `--world robot` gives the original
+   black-and-white world (then draw white line props with `robotfilm/examples/讨论即开发_道具图提示词.txt`, the last
+   such sheet as reference, and no `SOLID_PROPS`), `--world story` the 「一笔」 forested world.
 5. **Report** as in 2S steps 4–6 (qa items, files, publish notes), and say plainly that you only looked at
    frames: whether the motion looks natural is for the user to judge.
 
@@ -140,6 +142,22 @@ point that changed.
 **Any other code: failed.** Read the last lines of `run.log.jsonl` in the output folder (the final
 entry has the error and a `retry` hint) and explain the cause. If `vagent doctor` would help
 (missing dependency, model or font), run `<vagent>/.venv/bin/vagent doctor`.
+
+## 3. Tidy the folder (all styles)
+
+The user keeps only the two videos (Chinese + English) and `publish_notes.md` in each episode folder; no
+covers, storyboard, voice, frames, logs or extra versions. The rest is still needed for quick fixes (a misread
+sentence is re-voiced and re-rendered in minutes), so tidy only once the user is done with the episode:
+
+- when the user says it is fine / final (没问题、定稿、可以了), tidy that episode's folder;
+- at the start of a new /make-video, tidy every earlier episode folder that still holds extra files.
+
+```bash
+python3 "<this skill's base directory>/clean_output.py" <vagent>/output            # show what stays
+python3 "<this skill's base directory>/clean_output.py" <vagent>/output --go       # videos to the top, generated files to the Trash; files it does not recognise stay and are listed
+```
+
+Report paths accordingly: after tidying, the videos sit at `<folder>/robot2_portrait.mp4` etc., not in `robot2/`.
 
 ## Rules
 
