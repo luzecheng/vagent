@@ -34,7 +34,7 @@ from .compose import Film as WordsFilm, merged_timeline
 from .front import Front
 from .puppet import ICE, _surface
 from .walker import STAND, Walker, blend, cutout, load_side_parts, walk_pose
-from .world import StoryWorld, World
+from .world import StoryWorld, World, soft_ellipse
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = Path(__file__).parent / "assets"      # the robot as Codex drew it (see tests/robot-figure, robot-puppet)
@@ -45,6 +45,8 @@ FORMATS = {"zh": ("portrait", 1080, 1920), "en": ("landscape", 1920, 1080)}
 BLEND = 0.3                      # walk <-> action pose blending
 CAM_TALK = (1.05, 1.11)          # camera push-in while the robot talks, alternating shot by shot
 CAM_QUOTE = 1.16                 # closer on quote shots
+SHADOW = (0.0, 0.0, 0.02)
+WARM_LIGHT = (1.0, 0.72, 0.38)     # station glow=True: firelight / lamplight
 smooth = lambda k: k * k * (3 - 2 * k)
 
 
@@ -377,7 +379,16 @@ class Film(WordsFilm):
                 dim = st["dim"](t, self) if callable(st.get("dim")) else st.get("dim", 0.0)
                 base = self.ground + st.get("sink", 0) * self.u
                 h = st["h"] * (0.35 + 0.65 * smooth(ramp(t, st["t_in"] + 0.6, st["t_in"] + 3.5))) if st.get("grow") else st["h"]
-                self.props[st["name"]].draw(cr, x, base, h, a, dim, st.get("flip", False))
+                sp = self.props[st["name"]]
+                if st.get("glow"):                # a prop that gives light: a halo and a pool of it on the ground
+                    col = st["glow"] if isinstance(st["glow"], tuple) else WARM_LIGHT
+                    f = (0.82 + 0.18 * math.sin(t * 9.0 + x * 0.01) * math.sin(t * 5.3)) if st.get("flicker") else 1.0
+                    k = a * f * (1 - dim)
+                    soft_ellipse(cr, x, base - h * 0.45, h * 1.1, h * 1.1, col, 0.30 * k)
+                    soft_ellipse(cr, x, base + 10 * self.u, h * 1.9, h * 0.26, col, 0.48 * k)
+                w = h * sp.w / sp.h                    # soft contact shadow, so it stands on the ground
+                soft_ellipse(cr, x, base + 3 * self.u, w * 0.55, max(5 * self.u, w * 0.06), SHADOW, 0.55 * a)
+                sp.draw(cr, x, base, h, a, dim, st.get("flip", False))
         ctx = {"i": i, "t": t, "lt": lt, "dur": s["end"] - s["start"], "walk": b.get("walk", 0.0),
                "voice": s["voice_end"] - s["start"], "lang": self.lang}
         q = self.pose(t)
@@ -392,6 +403,9 @@ class Film(WordsFilm):
         lift = extra.get("lift", 0.0) + self.climb(travel)
         if "settle" in b:                 # comes back down from where the last shot left it
             lift += b["settle"] * self.height * (1 - smooth(ramp(lt, 0.0, 0.8)))
+        shade = max(0.0, 1 - lift / (self.height * 0.6))     # the robot's own shadow, fainter when it is lifted
+        soft_ellipse(cr, self.hip_x + self.height * 0.02, self.ground + 3 * self.u, self.height * 0.21,
+                     self.height * 0.035, SHADOW, 0.8 * shade)
         if front is not None and lt >= front[0]:
             self._front(cr, ctx, front)
             J = None

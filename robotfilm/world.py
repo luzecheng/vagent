@@ -17,6 +17,24 @@ import cairo
 from story.scenery import Scenery
 
 HORIZON = 0.68
+LAMP_POOL = (0.98, 0.9, 0.72)       # warm lamp light on the ground
+
+
+def soft_ellipse(cr, cx, cy, rx, ry, rgb, a):
+    """A flat, soft-edged ellipse of colour fading out from its centre (shadows, pools of light, glows)."""
+    if a <= 0 or rx <= 0 or ry <= 0:
+        return
+    cr.save()
+    cr.translate(cx, cy)
+    cr.scale(1, ry / rx)
+    g = cairo.RadialGradient(0, 0, 0, 0, 0, rx)
+    g.add_color_stop_rgba(0, *rgb, a)
+    g.add_color_stop_rgba(0.5, *rgb, a * 0.5)
+    g.add_color_stop_rgba(1, *rgb, 0)
+    cr.set_source(g)
+    cr.arc(0, 0, rx, 0, 2 * math.pi)
+    cr.fill()
+    cr.restore()
 # palettes: "night" is the original blue-black world; "color" is the user's favourite city night in colour.
 PALETTES = {
     "night": dict(sky_top=(0.027, 0.039, 0.075), sky_mid=None, sky_low=(0.055, 0.075, 0.13),
@@ -34,7 +52,7 @@ PALETTES = {
                   clouds=dict(light=(0.88, 0.86, 0.88), shade=(0.36, 0.38, 0.48), cover=0.50, edge=0.16, seed=7),
                   far=(0.15, 0.17, 0.30), near=(0.05, 0.13, 0.11), pine=(0.07, 0.21, 0.14),
                   far_line=(0.70, 0.74, 0.90), near_line=(0.55, 0.82, 0.66), pine_line=(0.58, 0.86, 0.62),
-                  ground_top=(0.07, 0.08, 0.10), ground_low=(0.015, 0.018, 0.03), sheen=(1.0, 0.82, 0.55),
+                  lamp_pool=0.22, ground_top=(0.07, 0.08, 0.10), ground_low=(0.015, 0.018, 0.03), sheen=(1.0, 0.82, 0.55),
                   grid=(0.80, 0.82, 0.90)),
 }
 
@@ -153,8 +171,16 @@ class World:
         self._layer(cr, self.far, travel, c["far"], c["far_line"], 0.22, pines=False)
         self._layer(cr, self.near, travel, c["near"], c["near_line"], 0.42, pines=True)
         self._ground(cr, travel)
+        if c.get("lamp_pool"):
+            self._lamp_pools(cr, travel, c["lamp_pool"])
         st = SimpleNamespace(W=W, horizon=hz, s=self.s, cam=SimpleNamespace(travel=travel))
         self.props.roadside(cr, st, t, 1.0)
+
+    def _lamp_pools(self, cr, travel, a):
+        """A soft circle of lamp light on the ground under each street lamp's head (the colour night)."""
+        for wx in self.props.lamps:
+            for x in self.props._on_screen(wx, travel, self.W, 100):
+                soft_ellipse(cr, x + 34 * self.s, self.horizon + 6 * self.u, 70 * self.s, 11 * self.s, LAMP_POOL, a)
 
     def _clouds(self, cr, travel, t, cc):
         """The cloud texture, drifting left and scrolling a little with the walk; it wraps every 3 frame widths."""
