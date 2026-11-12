@@ -75,10 +75,9 @@ def test_camera_moves_smoothly_and_never_shows_past_the_frame(tmp_path):
     assert max(abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(heads, heads[1:])) < 40 * film.u, "the robot glides"
 
 
-def test_camera_is_wide_when_the_robot_arrives_and_closest_on_quotes(tmp_path):
+def test_camera_is_closest_on_quotes(tmp_path):
     film = _talky_film(tmp_path)
-    s2, s4 = film.shots[1], film.shots[3]
-    assert abs(film.zoom(s2["start"] + 1.5) - 1.0) < 1e-6
+    s4 = film.shots[3]
     talk_peaks = [film.zoom(s["end"] - 1e-3) for s in film.shots[:3]]
     assert film.zoom(s4["end"] - 1e-3) > max(talk_peaks)
 
@@ -238,3 +237,123 @@ def test_sky_words_stay_put_while_the_camera_moves():
     img = np.ndarray((1920, 1080, 4), np.uint8, surf.get_data())[..., 3]
     ys, xs = np.nonzero(img > 128)
     assert abs(ys.mean() - 300) < 40 and abs(xs.mean() - 540) < 40, (ys.mean(), xs.mean())
+
+
+def _shot_film(tmp_path, beat, d=8.0, world="color"):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots = [{"id": 1, "start": 0.0, "end": 4.0, "voice_end": 3.7, "subs": []},
+             {"id": 2, "start": 4.0, "end": 4.0 + d, "voice_end": 3.7 + d, "subs": []}]
+    mod = types.SimpleNamespace(BEATS={2: beat}, MACHINE=None, SOLID_PROPS=True,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": 4.0 + d, "shots": shots}, 1080, 1920, mod, "zh", world)
+
+
+def test_the_robot_walks_into_a_still_frame(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=3.5, enter=True))
+    t0, t1 = 4.0 + 1 / FPS, 4.0 + 3.5
+    assert film.view_trav(t0) == film.view_trav(t1), "the camera holds still while it comes in"
+    assert film.robot_x(t0) < film.hip_x - 0.3 * film.W, "it starts near the left edge"
+    assert abs(film.robot_x(t1) - film.hip_x) < 2, "and stops on its mark"
+
+
+def test_the_robot_walks_out_of_a_still_frame(tmp_path):
+    film = _shot_film(tmp_path, dict(leave=3.0))
+    t0, t1 = 12.0 - 3.0 + 1 / FPS, 12.0 - 1 / FPS
+    assert film.view_trav(t0) == film.view_trav(t1)
+    assert film.robot_x(t1) > film.hip_x + 0.25 * film.W, "it walks off to the right"
+    assert film.robot_x(5.0) == film.hip_x
+
+
+def test_blurred_grass_passes_in_front(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=8.0))
+    on = [film.foreground_cover(4.0 + k * 0.25) for k in range(32)]
+    assert max(on) > 0 and min(on) == 0, "now and then something passes in front, not all the time"
+    off = _shot_film(tmp_path / "b", dict(walk=8.0), world="robot")
+    assert max(off.foreground_cover(4.0 + k * 0.25) for k in range(32)) == 0, "only in the colour night"
+
+
+def test_leaves_drift_across_a_still_shot(tmp_path):
+    still = _shot_film(tmp_path, {})
+    leaves = _shot_film(tmp_path / "l", dict(drift="leaves"))
+    band = slice(int(still.H * 0.2), int(still.ground))
+    diff = np.abs(_frame(leaves, 7.0)[band] - _frame(still, 7.0)[band]).sum()
+    assert diff > 5000
+
+
+def test_shot_list_flags_still_shots_and_repeated_sizes(tmp_path):
+    from robotfilm.shotlist import rows, warnings
+    film = _shot_film(tmp_path, {})
+    r = rows(film)
+    assert [x["id"] for x in r] == [1, 2] and {"size", "camera", "moves"} <= set(r[0])
+    still = {"id": 9, "size": "full", "camera": "hold", "moves": []}
+    w = warnings([dict(still, id=k) for k in (1, 2, 3)])
+    assert any("1–3" in x or "1-3" in x for x in w), w
+    assert any("9" in x or "1" in x for x in w if "nothing moves" in x), w
+
+
+def test_the_film_opens_with_the_robot_walking_in(tmp_path):
+    film = _shot_film(tmp_path, {})                  # shot 1 has no walk of its own
+    assert film.robot_x(0.1) < film.hip_x - 0.15 * film.W, "moving from the very first frames"
+    assert abs(film.robot_x(3.2) - film.hip_x) < 2, "on its mark after about three seconds"
+    assert film.view_trav(0.1) == film.view_trav(2.9), "the camera waits on the opening place"
+    still = _shot_film(tmp_path / "s", {})
+    still.beats[1] = {"still_open": True}
+    still._plan()
+    assert still.robot_x(0.1) == still.hip_x, "an episode can still open on a standing robot"
+
+
+def test_shot_list_flags_a_still_opening():
+    from robotfilm.shotlist import warnings
+    rs = [{"id": 1, "size": "full", "camera": "push in", "moves": ["camera"]},
+          {"id": 2, "size": "medium", "camera": "follow", "moves": ["walks"]}]
+    assert any("opening" in x for x in warnings(rs))
+
+
+
+def test_the_camera_never_zooms_fast_enough_to_make_you_dizzy(tmp_path):
+    import math
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots, t = [], 0.0                      # short talk shots, a quote, then a quick walk: the hard cases
+    for i, (d, q) in enumerate(((5.0, 0), (3.0, 0), (3.0, 1), (6.0, 0), (2.6, 0), (4.0, 0)), 1):
+        shots.append({"id": i, "start": t, "end": t + d, "voice_end": t + d - 0.3, "subs": [], **({"quote": "q"} if q else {})})
+        t += d
+    mod = types.SimpleNamespace(BEATS={4: dict(walk=1.2)}, MACHINE=None,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    film = Film(tmp_path, {"duration": t, "shots": shots}, 1080, 1920, mod, "zh")
+    zs = [film.zoom(f / FPS) for f in range(int(film.tl["duration"] * FPS))]
+    fastest = max(abs(math.log(b / a)) for a, b in zip(zs, zs[1:])) * FPS
+    assert fastest < math.log(1.25), f"at most 25 % per second, got {math.exp(fastest) - 1:.0%}"
+
+
+def test_far_things_barely_move_when_the_camera_pushes_in():
+    from robotfilm.world import layer_camera
+    cam = (2.0, -540.0, -900.0)                      # a close-up around (540, 900)
+    sky, hills, ground = (layer_camera(cam, d) for d in (0.1, 0.5, 1.0))
+    assert sky[0] < 1.15 and 1.3 < hills[0] < 1.7 and ground == cam
+    assert layer_camera((1.0, 0.0, 0.0), 0.3) == (1.0, 0.0, 0.0)
+    fx, fy = 540.0, 900.0                            # the point the camera pushes in on stays put in every layer
+    for z, ax, ay in (sky, hills, ground):
+        assert abs(ax + z * fx - fx) < 1e-6 and abs(ay + z * fy - fy) < 1e-6
+
+
+def test_foreground_grass_only_comes_and_goes_at_the_frame_edges(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=8.0))
+    W = film.W
+    prev = []
+    seen = 0
+    for f in range(int(film.tl["duration"] * FPS) + 1):
+        now = film.foreground_clumps(f / FPS)            # [(left x, width)] of the clumps in frame
+        assert all(film.foreground_cover(f / FPS) in (0.0, 1.0) for _ in [0]), "never fades in or out"
+        if len(now) > len(prev):                         # one came in: from the right edge
+            assert now[-1][0] > W - 0.2 * W, now
+        if len(now) < len(prev):                         # one went out: past the left edge
+            x, w = prev[0]
+            assert x + w < 0.2 * W, prev
+        seen += bool(now)
+        prev = now
+    assert seen, "a long walk should have grass pass by"
+
+
+def test_no_grass_on_short_walks(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=1.2))
+    assert not any(film.foreground_clumps(f / FPS) for f in range(int(film.tl["duration"] * FPS)))

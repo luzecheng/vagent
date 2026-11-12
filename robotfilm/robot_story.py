@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import math
+import random
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -34,7 +35,7 @@ from .compose import Film as WordsFilm, merged_timeline
 from .front import Front
 from .puppet import ICE, _surface
 from .walker import STAND, Walker, blend, cutout, load_side_parts, walk_pose
-from .world import StoryWorld, World, soft_ellipse
+from .world import HORIZON, WIDE, StoryWorld, World, soft_ellipse
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = Path(__file__).parent / "assets"      # the robot as Codex drew it (see tests/robot-figure, robot-puppet)
@@ -45,9 +46,13 @@ FORMATS = {"zh": ("portrait", 1080, 1920), "en": ("landscape", 1920, 1080)}
 BLEND = 0.3                      # walk <-> action pose blending
 ROBOT_X = 0.38                   # the robot stands on the left-third line (props go toward the right one)
 CAM_TALK = (1.05, 1.11)          # "full" shots push in a little, alternating shot by shot
-CAM_SIZES = {"medium": (1.9, 1.5), "close": (2.8, 2.2)}   # zoom on the robot (portrait, landscape)
+CAM_SIZES = {"medium": (1.6, 1.35), "close": (2.2, 1.8)}  # zoom on the robot (portrait, landscape)
+ORDER = ("full", "medium", "close")
+CAM_RATE = 0.2                   # the zoom changes by at most ~22 % per second (log units): never dizzying
 TURNS = ("medium", "full", "close")                        # talking shots take turns
-WIDE = (1.0, 0.0, 0.0)
+OPENING_WALK = 3.0               # s: the opening shot walks the robot in unless the beat says still_open=True
+FG_MIN_WALK = 0.2                # frame widths the camera must travel in one walk for grass to pass in front
+LEAF_COLOURS = [(0.86, 0.52, 0.18), (0.93, 0.74, 0.25), (0.62, 0.72, 0.3), (0.8, 0.36, 0.2)]
 SHADOW = (0.0, 0.0, 0.02)
 SMOKE = (0.85, 0.86, 0.9)
 WARM_LIGHT = (1.0, 0.72, 0.38)     # station glow=True: firelight / lamplight
@@ -190,12 +195,18 @@ class Film(WordsFilm):
         self.height = (250 if self.portrait else 300) * self.u   # portrait: smaller next to the larger mountains
         self.front = Front(FRONT, self.height * 1.02)
         self.hip_x = W * ROBOT_X
+        self.fg = _foreground(W, H, self.u) if world == "color" else None   # blurred grass passing close by
         self.ground = self.world.horizon
         self._plan()
 
     # ---------- timing ----------
     def beat(self, i):
-        return self.beats.get(self.shots[i]["id"], {})
+        b = self.beats.get(self.shots[i]["id"], {})
+        if i == 0 and not b.get("walk") and not b.get("still_open"):
+            # the film opens moving: the robot walks in from the left while the camera waits on the first place
+            dur = self.shots[0]["end"] - self.shots[0]["start"]
+            b = {**b, "walk": min(OPENING_WALK, max(0.0, dur - 0.5)), "enter": True}
+        return b
 
     def shot_at(self, t):
         for i, s in enumerate(self.shots):
@@ -214,6 +225,10 @@ class Film(WordsFilm):
         lt = t - s["start"]
         w = b.get("walk", 0.0)
         act = self.action_pose(i, max(0.0, lt - w))
+        if b.get("leave"):                        # sets off again before the shot ends and walks out of frame
+            off = lt - (s["end"] - s["start"] - b["leave"])
+            if off >= 0:
+                return blend(act, walk_pose(t), smooth(min(1.0, off / BLEND)))
         if w <= 0:
             return act
         if lt < w:
@@ -267,7 +282,33 @@ class Film(WordsFilm):
             if "out" in st:                      # gone as the shot with that id begins (earlier or later than usual)
                 k = next(k for k, sh in enumerate(self.shots) if sh["id"] == st["out"])
                 st["t_out"] = self.shots[k]["start"] + 0.9
+        self._plan_holds()
+        self._plan_foreground()
         self._plan_camera()
+
+    # ---------- still camera: the robot walks into or out of a frame that holds still ----------
+    def _plan_holds(self):
+        """enter=True: the camera waits at the robot's mark while it walks in (the walk of that shot);
+        leave=<s>: the camera stays put for the last s of the shot while the robot walks off to the right."""
+        self.holds = []
+        for i, s in enumerate(self.shots):
+            b, dur = self.beat(i), s["end"] - s["start"]
+            w = min(b.get("walk", 0.0), dur)
+            if b.get("enter") and w > 0:
+                self.holds.append((s["start"], s["start"] + w, self.trav(s["start"] + w)))
+            if b.get("leave"):
+                t0 = s["end"] - min(b["leave"], dur)
+                self.holds.append((t0, s["end"], self.trav(t0)))
+
+    def view_trav(self, t):
+        """How far the camera has travelled: with the robot, except while it holds still."""
+        for t0, t1, v in self.holds:
+            if t0 <= t <= t1:
+                return v
+        return self.trav(t)
+
+    def robot_x(self, t):
+        return self.hip_x + self.trav(t) - self.view_trav(t)
 
     # ---------- camera ----------
     # The camera is an affine map: screen = a + z * point (z zoom, a offset), eased from shot to shot.
@@ -303,17 +344,32 @@ class Film(WordsFilm):
                     turn += 1
             if name == "close" and (i + 1 < n and walks[i + 1]):
                 name = "medium"
+            prev = names[-1] if names else "full"
+            if b.get("cam") not in CAM_SIZES:
+                if dur < 3.0:                     # too short to change size gently: keep the last one
+                    name = prev
+                elif abs(ORDER.index(name) - ORDER.index(prev)) == 2:
+                    name = "medium"               # one step per shot: full <-> medium <-> close
             names.append(name)
         self.sizes = names
         talk = 0
-        self.cam_to = []
+        self.cam_in, self.cam_to = [], []
+        c = WIDE
         for i, name in enumerate(names):
             if name == "full":
-                self.cam_to.append(self._full(CAM_TALK[talk % 2]))
+                want = self._full(CAM_TALK[talk % 2])
                 talk += 1
             else:
-                self.cam_to.append(self._on_robot(name))
-        self.cam_in = [WIDE] + self.cam_to[:-1]
+                want = self._on_robot(name)
+            s = self.shots[i]
+            # never faster than CAM_RATE: smooth() peaks at 1.5x its mean speed, so over a shot of d seconds the
+            # zoom may change by at most exp(CAM_RATE * d / 1.5); a bigger change stops part of the way
+            room = CAM_RATE * (s["end"] - s["start"]) / 1.5
+            need = abs(math.log(want[0] / c[0]))
+            to = want if need <= room else _mix(c, want, _part(c[0], want[0], room))
+            self.cam_in.append(c)
+            self.cam_to.append(to)
+            c = to
 
     def _full(self, z):
         """Pushed in a little on the middle of the place, between the robot and its props."""
@@ -337,13 +393,7 @@ class Film(WordsFilm):
         s = self.shots[i]
         lt, dur = t - s["start"], s["end"] - s["start"]
         c0, c1 = self.cam_in[i], self.cam_to[i]
-        w = min(self.beat(i).get("walk", 0.0), dur)
-        mix = lambda p, q, k: tuple(x + (y - x) * k for x, y in zip(p, q))
-        if w > 0:
-            if lt < w:                            # walking: back out to the wide shot by the time it stops
-                return mix(c0, WIDE, smooth(lt / w))
-            c0, lt, dur = WIDE, lt - w, dur - w
-        return mix(c0, c1, smooth(min(1.0, lt / dur))) if dur > 0 else c1
+        return _mix(c0, c1, smooth(min(1.0, lt / dur))) if dur > 0 else c1
 
     def zoom(self, t):
         return self.camera(t)[0]
@@ -411,12 +461,14 @@ class Film(WordsFilm):
         s = self.shots[i]
         lt = t - s["start"]
         b = self.beat(i)
-        travel = self.trav(t)
-        cr.save()                                 # the camera moves the world, props, robot and sky words ...
-        z, ax, ay = self.camera(t)
+        travel = self.view_trav(t)
+        rx = self.robot_x(t)
+        cam = self.camera(t)
+        self.world.draw(cr, travel, t, cam)      # far layers follow the camera only partly (depth)
+        cr.save()                                 # the camera moves the props, the robot and what it does ...
+        z, ax, ay = cam
         cr.translate(ax, ay)
         cr.scale(z, z)
-        self.world.draw(cr, travel, t)
         for st in self.stations:
             x = st["x"] - travel
             if -self.W * 0.6 < x < self.W * 1.6 and st["t_in"] - 0.01 <= t <= st["t_out"]:
@@ -459,17 +511,17 @@ class Film(WordsFilm):
         fx = b.get("fx")
         if fx and b.get("fx_behind"):
             extra = fx(self, cr, ctx) or {}
-        lift = extra.get("lift", 0.0) + self.climb(travel)
+        lift = extra.get("lift", 0.0) + self.climb(self.trav(t))
         if "settle" in b:                 # comes back down from where the last shot left it
             lift += b["settle"] * self.height * (1 - smooth(ramp(lt, 0.0, 0.8)))
         shade = max(0.0, 1 - lift / (self.height * 0.6))     # the robot's own shadow, fainter when it is lifted
-        soft_ellipse(cr, self.hip_x + self.height * 0.02, self.ground + 3 * self.u, self.height * 0.21,
+        soft_ellipse(cr, rx + self.height * 0.02, self.ground + 3 * self.u, self.height * 0.21,
                      self.height * 0.035, SHADOW, 0.8 * shade)
         if front is not None and lt >= front[0]:
             self._front(cr, ctx, front)
             J = None
         else:
-            J = self.robot(cr, self.hip_x, self.ground - lift, q, chest=extra.get("chest", 1.0))
+            J = self.robot(cr, rx, self.ground - lift, q, chest=extra.get("chest", 1.0))
         ctx["J"] = J
         if J is not None and b.get("hold"):      # the robot holds a prop: hold=(prop, height in design px[, from s])
             name, hh, *since = b["hold"]
@@ -479,7 +531,75 @@ class Film(WordsFilm):
         if fx and not b.get("fx_behind"):
             fx(self, cr, ctx)
         cr.restore()                              # ... but not the subtitles and quotes: they stay put
+        if b.get("drift"):                       # leaves or paper drifting across a still shot, near the lens
+            self._drift(cr, b["drift"], lt, t)
+        self._foreground(cr, t)
         self._words(cr, i, t)
+
+    # ---------- foreground and things drifting by ----------
+    def _plan_foreground(self):
+        """Blurred grass right in front of the lens, passing during the longer walks only.  Each clump is a thing
+        beside the road: it is just outside the right edge when the walk starts and has gone past the left edge
+        by the time the robot stops, so it only ever comes in and goes out at the edges -- never fades, never
+        stays in frame.  Its nearness (how fast it passes) is chosen to cross the whole frame within the walk;
+        a walk too short for that gets none (it would whip past), and only every other long walk has one."""
+        self.fg_passes = []
+        if self.fg is None:
+            return
+        cw = self.fg.get_width()
+        long_walks = 0
+        for i, s in enumerate(self.shots):
+            b = self.beat(i)
+            w = min(b.get("walk", 0.0), s["end"] - s["start"])
+            if w <= 0 or b.get("enter"):
+                continue
+            t0, t1 = s["start"], s["start"] + w
+            dv = self.view_trav(t1) - self.view_trav(t0)
+            if dv < FG_MIN_WALK * self.W:
+                continue
+            long_walks += 1
+            if long_walks % 2 == 1:
+                self.fg_passes.append((t0, self.view_trav(t0), (self.W + cw) / dv))
+
+    def foreground_clumps(self, t):
+        """[(left x, width)] of the foreground clumps in frame at t."""
+        cw, out, v = self.fg.get_width() if self.fg is not None else 0, [], self.view_trav(t)
+        for t0, v0, near in self.fg_passes:
+            x = self.W - (v - v0) * near
+            if -cw < x < self.W:
+                out.append((x, cw))
+        return out
+
+    def foreground_cover(self, t):
+        return 1.0 if self.foreground_clumps(t) else 0.0
+
+    def _foreground(self, cr, t):
+        for x, _ in self.foreground_clumps(t):
+            cr.set_source_surface(self.fg, x, self.H - self.fg.get_height())
+            cr.paint_with_alpha(0.95)
+
+    def _drift(self, cr, kind, lt, t):
+        """A few leaves (or sheets of paper) blown across the frame from right to left, turning as they go."""
+        u = self.u
+        for k in range(4):
+            f = (lt * 0.16 + k * 0.29) % 1.25
+            x = self.W * (1.1 - f)
+            y = self.H * (0.24 + 0.09 * k) + 40 * u * math.sin(lt * 1.3 + k * 2) + f * 60 * u
+            spin = lt * (1.6 + 0.4 * k) + k
+            cr.save()
+            cr.translate(x, y)
+            cr.rotate(spin)
+            if kind == "paper":
+                cr.scale(max(0.15, abs(math.cos(spin * 0.7))), 1)
+                cr.rectangle(-30 * u, -40 * u, 60 * u, 80 * u)
+                cr.set_source_rgba(0.95, 0.94, 0.9, 0.9)
+                cr.fill()
+            else:
+                cr.scale(1, 0.45)
+                cr.arc(0, 0, 20 * u, 0, 2 * math.pi)
+                cr.set_source_rgba(*LEAF_COLOURS[k % len(LEAF_COLOURS)], 0.92)
+                cr.fill()
+            cr.restore()
 
     def _smoke(self, cr, x, top, h, t, a):
         """Soft puffs rising from (x, top), growing and fading as they drift up and to the right."""
@@ -510,6 +630,46 @@ class Film(WordsFilm):
         flash = 1 - min(1.0, abs(lt - at) / (1.5 / FPS))
         if flash > 0:
             orb(cr, x, self.ground - self.height * 0.5, self.height * 0.35, flash)
+
+
+def _mix(p, q, k):
+    return tuple(x + (y - x) * k for x, y in zip(p, q))
+
+
+def _part(z0, z1, room):
+    """How far from camera z0 toward z1 one may go so the zoom changes by exactly exp(room)."""
+    target = z0 * math.exp(room if z1 > z0 else -room)
+    return (target - z0) / (z1 - z0)
+
+
+def _foreground(W, H, u):
+    """A clump of tall grass, dark and out of focus (drawn small and scaled up, which blurs it)."""
+    k = 6                                                     # drawn at 1/6 size
+    w, h = int(W * 0.42 / k), int((H * (1 - HORIZON) + H * 0.15) / k)   # rises well above the road line
+    small = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+    sc = cairo.Context(small)
+    rnd = random.Random(23)
+    for _ in range(26):
+        bx = rnd.uniform(0.1, 0.9) * w
+        top = rnd.uniform(0.0, 0.5) * h
+        lean = rnd.uniform(-0.25, 0.25) * w
+        half = rnd.uniform(0.02, 0.05) * w
+        sc.move_to(bx - half, h)
+        sc.curve_to(bx - half, h * 0.6, bx + lean * 0.5, top + h * 0.2, bx + lean, top)
+        sc.curve_to(bx + lean * 0.5 + half, top + h * 0.25, bx + half, h * 0.6, bx + half, h)
+        sc.close_path()
+        sc.set_source_rgba(0.03, 0.08, 0.05, 1.0)
+        sc.fill_preserve()
+        sc.set_line_width(0.6)                                # a faint moonlit rim on each blade
+        sc.set_source_rgba(0.45, 0.55, 0.65, 0.35)
+        sc.stroke()
+    big = cairo.ImageSurface(cairo.FORMAT_ARGB32, w * k, h * k)
+    bc = cairo.Context(big)
+    bc.scale(k, k)
+    bc.set_source_surface(small, 0, 0)
+    bc.get_source().set_filter(cairo.FILTER_BILINEAR)
+    bc.paint()
+    return big
 
 
 def load_beats(folder: Path) -> dict:

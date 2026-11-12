@@ -21,7 +21,9 @@ GENERATED = [
     "draft*.png", "contact_sheet*.png", "cover*.png", "*.mp4", ".DS_Store", "build/*", "part*/*",
     "robot2/beats.py", "robot2/__pycache__/*", "robot2/*.log", "robot2/cover*.png", "robot2/*.mp4",
     "robot2/frames/*",
-    "robot2/review/sheet*.png", "robot2/review/f*.png", "robot2/review/g*.png", "robot2/review/frames*.png",
+    "robot2/review/sheet*.png", "robot2/review/shotlist.md", "robot2/review/props_prompt.txt",
+    "robot2/review/codex.log", "robot2/.DS_Store", "robot2/review/.DS_Store",
+    "robot2/review/f*.png", "robot2/review/g*.png", "robot2/review/frames*.png",
     "robot2/review/crop*.png", "robot2/review/*预览*.png", "robot2/review/*对比*.png", "robot2/review/*试听*",
 ]
 

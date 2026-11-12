@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import random
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import cairo
@@ -19,6 +20,34 @@ from story.scenery import Scenery
 HORIZON = 0.68
 LAMP_POOL = (0.98, 0.9, 0.72)       # warm lamp light on the ground
 FIREFLY = (1.0, 0.95, 0.6)
+
+
+WIDE = (1.0, 0.0, 0.0)              # the camera at rest: screen = a + z * point with z 1, a 0
+
+
+def layer_camera(cam, depth):
+    """The camera as seen by a layer at `depth` (1 = where the robot stands, toward 0 = far away): it zooms only
+    `depth` of the way, about the same point, so the point the camera pushes in on stays put in every layer."""
+    z, ax, ay = cam
+    if depth >= 1:
+        return cam
+    if abs(1 - z) < 1e-9:
+        return (1.0, ax * depth, ay * depth)
+    fx, fy = ax / (1 - z), ay / (1 - z)
+    zd = 1 + (z - 1) * depth
+    return (zd, fx * (1 - zd), fy * (1 - zd))
+
+
+@contextmanager
+def _through(cr, cam, depth):
+    z, ax, ay = layer_camera(cam, depth)
+    cr.save()
+    cr.translate(ax, ay)
+    cr.scale(z, z)
+    try:
+        yield
+    finally:
+        cr.restore()
 
 
 def soft_ellipse(cr, cx, cy, rx, ry, rgb, a):
@@ -140,7 +169,10 @@ class World:
         k = f - i
         return (h[i] * (1 - k) + h[(i + 1) % len(h)] * k) * self.H
 
-    def draw(self, cr, travel: float, t: float) -> None:
+    def draw(self, cr, travel: float, t: float, cam=WIDE) -> None:
+        """The world through the camera `cam` (z, ax, ay): far layers follow its push-ins only a little (sky 0.1,
+        far ridge 0.3, near ridge 0.55, fireflies 0.75), the ground and everything on it fully, as a real lens
+        moving closer sees it -- the sky does not rush at you."""
         W, H, hz, u = self.W, self.H, self.horizon, self.u
         c = self.c
         g = cairo.LinearGradient(0, 0, 0, hz)
@@ -150,36 +182,41 @@ class World:
             g.add_color_stop_rgb(0.58, *c["sky_low"])
         g.add_color_stop_rgb(1, *c["sky_low"])
         cr.set_source(g)
-        cr.rectangle(0, 0, W, hz)
+        cr.rectangle(0, 0, W, H)
         cr.fill()
-        share = c.get("star_share", 1.0)
-        for n, (x, y, r, ph) in enumerate(self.stars):
-            sx = (x - travel * 0.03) % (W * 3)
-            if sx < W and (n % 100) < share * 100:
-                a = 0.35 + 0.35 * (0.5 + 0.5 * math.sin(t * 1.7 + ph))
-                a *= 1 - 0.7 * min(1.0, max(0.0, y / hz - 0.3) / 0.3) if c["sky_mid"] else 1   # fainter in the dusk glow
-                cr.arc(sx, y, r, 0, 2 * math.pi)
-                cr.set_source_rgba(*c["stars"][n % len(c["stars"])], a)
+        with _through(cr, cam, 0.1):
+            share = c.get("star_share", 1.0)
+            for n, (x, y, r, ph) in enumerate(self.stars):
+                sx = (x - travel * 0.03) % (W * 3)
+                if sx < W and (n % 100) < share * 100:
+                    a = 0.35 + 0.35 * (0.5 + 0.5 * math.sin(t * 1.7 + ph))
+                    a *= 1 - 0.7 * min(1.0, max(0.0, y / hz - 0.3) / 0.3) if c["sky_mid"] else 1   # fainter in the dusk glow
+                    cr.arc(sx, y, r, 0, 2 * math.pi)
+                    cr.set_source_rgba(*c["stars"][n % len(c["stars"])], a)
+                    cr.fill()
+            mx, my = W * 0.72, hz * 0.22
+            for k in range(6, 0, -1):
+                cr.arc(mx, my, 34 * u * (1 + k * 0.45), 0, 2 * math.pi)
+                cr.set_source_rgba(*c["moon_glow"], 0.035)
                 cr.fill()
-        mx, my = W * 0.72, hz * 0.22
-        for k in range(6, 0, -1):
-            cr.arc(mx, my, 34 * u * (1 + k * 0.45), 0, 2 * math.pi)
-            cr.set_source_rgba(*c["moon_glow"], 0.035)
+            cr.arc(mx, my, 34 * u, 0, 2 * math.pi)
+            cr.set_source_rgba(*c["moon"], 0.95)
             cr.fill()
-        cr.arc(mx, my, 34 * u, 0, 2 * math.pi)
-        cr.set_source_rgba(*c["moon"], 0.95)
-        cr.fill()
-        if self.clouds is not None:
-            self._clouds(cr, travel, t, c["clouds"])
-        self._layer(cr, self.far, travel, c["far"], c["far_line"], 0.22, pines=False)
-        self._layer(cr, self.near, travel, c["near"], c["near_line"], 0.42, pines=True)
+            if self.clouds is not None:
+                self._clouds(cr, travel, t, c["clouds"])
+        with _through(cr, cam, 0.3):
+            self._layer(cr, self.far, travel, c["far"], c["far_line"], 0.22, pines=False)
+        with _through(cr, cam, 0.55):
+            self._layer(cr, self.near, travel, c["near"], c["near_line"], 0.42, pines=True)
         if c.get("fireflies"):
-            self._fireflies(cr, travel, t, c["fireflies"])
-        self._ground(cr, travel)
-        if c.get("lamp_pool"):
-            self._lamp_pools(cr, travel, c["lamp_pool"])
-        st = SimpleNamespace(W=W, horizon=hz, s=self.s, cam=SimpleNamespace(travel=travel))
-        self.props.roadside(cr, st, t, 1.0)
+            with _through(cr, cam, 0.75):
+                self._fireflies(cr, travel, t, c["fireflies"])
+        with _through(cr, cam, 1.0):
+            self._ground(cr, travel)
+            if c.get("lamp_pool"):
+                self._lamp_pools(cr, travel, c["lamp_pool"])
+            st = SimpleNamespace(W=W, horizon=hz, s=self.s, cam=SimpleNamespace(travel=travel))
+            self.props.roadside(cr, st, t, 1.0)
 
     def _fireflies(self, cr, travel, t, n):
         """A few warm points of light drifting and blinking over the grass, in front of the hills."""
@@ -213,10 +250,10 @@ class World:
         off = travel * ridge["speed"]
         xs = [x * 6 for x in range(int(W / 6) + 2)]
         top = [(x, hz - self._ridge_y(ridge, x + off)) for x in xs]
-        cr.move_to(0, hz + 2)
-        for p in top:
+        cr.move_to(0, self.H)                  # down to the bottom of the frame: the ground covers the rest, and
+        for p in top:                          # layers zoomed by different amounts never leave a gap between them
             cr.line_to(*p)
-        cr.line_to(W, hz + 2)
+        cr.line_to(W, self.H)
         cr.close_path()
         cr.set_source_rgb(*fill)
         cr.fill()
@@ -306,7 +343,11 @@ class StoryWorld:
         self.horizon = self.st.horizon * self.k
         self.s = self.st.s * self.k
 
-    def draw(self, cr, travel: float, t: float) -> None:
+    def draw(self, cr, travel: float, t: float, cam=WIDE) -> None:
+        with _through(cr, cam, 1.0):
+            self._draw(cr, travel, t)
+
+    def _draw(self, cr, travel: float, t: float) -> None:
         from story.stage import Camera
         self.st.cam = Camera(travel=travel / self.k)   # on screen the ground still moves exactly `travel` px
         self.st.t = t

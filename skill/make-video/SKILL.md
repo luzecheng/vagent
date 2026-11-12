@@ -64,11 +64,20 @@ Do not stop for storyboard confirmation (the user wants the video made directly)
      robot (station x about 0.44);
    - the camera chooses shot sizes by itself (full when arriving, quotes close, talk shots take turns
      medium / full / close; the robot stands on the 38 % line); override with `cam="full"|"medium"|"close"`;
+   - entering and leaving the frame: `enter=True` with a long `walk` (3.5–4 s, only on shots whose narration is
+     long enough) makes the camera wait at the mark while the robot walks in from the left; `leave=<s>` makes
+     it walk off to the right for the last s of the shot (pair a leave with an enter on the next shot: a cut);
+   - still shots need something moving: `drift="leaves"` or `"paper"` blows a few across the frame; the colour
+     night passes blurred grass in front of the lens on longer walks only (≥ ~0.2 frame widths, every other
+     one): it comes in at the right edge and leaves at the left within the walk, never fades (automatic);
    - sky words via `fx.label` stay fixed on screen while the camera moves; draw anything that belongs to them
      (a strike-through, an arrow between two labels) inside `with fx.screen_space(cr):`, and measure labels
      with `fx.label_width`. Things standing in the world (bubbles over the robot, effects at a prop) are
      drawn normally and move with the camera.
-4. **Check sheets, then render.** `.venv/bin/python -m robotfilm.robot_story <folder> --sheet` (seconds) writes
+4. **Shot list, check sheets, then render.** `.venv/bin/python -m robotfilm.shotlist <folder>` writes
+   `robot2/review/shotlist.md` (size, camera, what moves, cut or continuous, per shot) and prints warnings:
+   fix every "nothing moves" and "three … in a row" in beats.py before rendering.
+   `.venv/bin/python -m robotfilm.robot_story <folder> --sheet` (seconds) writes
    `robot2/review/sheet_*.png`: look at both, fix overlaps / props piling up / unreadable labels, repeat. After the
    voice is done: `.venv/bin/python -m robotfilm.robot_story <folder>` in the background (~3–4 min). Extract a few
    frames with ffmpeg and look at them. The colour night is the default; `--world robot` gives the original

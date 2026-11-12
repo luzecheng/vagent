@@ -94,14 +94,14 @@ def appear(ctx, start=0.2, end=None):
 def anchor(film, ctx, fx):
     """Screen x of something standing in the world where fx*W was when the robot arrived in this shot."""
     s = film.shots[ctx["i"]]
-    return film.trav(min(s["end"], s["start"] + ctx["walk"])) + fx * film.W - film.trav(ctx["t"])
+    return film.trav(min(s["end"], s["start"] + ctx["walk"])) + fx * film.W - film.view_trav(ctx["t"])
 
 
 def anchor_shot(film, ctx, shot_id, fx):
     i = next(k for k, s in enumerate(film.shots) if s["id"] == shot_id)
     s = film.shots[i]
     w = film.beat(i).get("walk", 0.0)
-    return film.trav(min(s["end"], s["start"] + w)) + fx * film.W - film.trav(ctx["t"])
+    return film.trav(min(s["end"], s["start"] + w)) + fx * film.W - film.view_trav(ctx["t"])
 
 
 def joints(film, q, lift=0.0, x=None):
