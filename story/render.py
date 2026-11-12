@@ -4,7 +4,7 @@
 Default formats: Chinese portrait, English landscape (DEFAULT_FORMATS); --portrait gives both for each.
                                      [--preview] [--stills]
 
-Steps: narration (vagent TTS, your configured voice) -> shot timeline from the real audio -> soft music mix
+Steps: narration (vagent TTS, your configured voice) -> shot timeline from the real audio -> audio mix (background music only if config audio.music)
 (vagent's procedural score, voice at -16 LUFS) -> frames drawn with pycairo in parallel -> H.264 + AAC.
 Everything is written into the episode folder.  Nothing is uploaded or published.
 
@@ -573,7 +573,7 @@ def render_language(folder: Path, sb: dict, lang: str, args) -> None:
         contact_sheet(timeline, *FORMATS[name], seed, folder / f"contact_sheet{tag}_{name}.png")
     if args.stills:
         return
-    final, stats = mix(voice, timeline["duration"], seed, build / lang, music=True)
+    final, stats = mix(voice, timeline["duration"], seed, build / lang, music=configmod.music(config))
     print(f"mix {stats['final_lufs']} LUFS, music {stats['music_lufs']} LUFS", flush=True)
     for name in formats:
         W, H_ = FORMATS[name]

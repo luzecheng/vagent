@@ -24,6 +24,7 @@ from pathlib import Path
 
 import cairo
 
+from vagent import config as configmod
 from story.render import FPS, PORTRAIT_WORDS as PW, SUB_SIZE, fit_rows, quote_lines, runs
 from story.stage import GOLD, WHITE, circle, ramp, text, text_runs
 from story import narrate as narration
@@ -362,7 +363,7 @@ def main(argv=None):
         cover_png = folder / f"robot_cover{tag}_{name}.png"
         still(folder, tl, W, H, lang, 0.0, cover_png)
         final, stats = mix(folder / "build" / f"voice{tag}.wav", tl["duration"], 19, folder / "build" / f"robot_{lang}",
-                           music=True)
+                           music=configmod.music())
         print(f"mix {stats['final_lufs']} LUFS", flush=True)
         fps = FPS
         if args.preview:

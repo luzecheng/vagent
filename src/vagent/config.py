@@ -46,3 +46,8 @@ def load(overrides: dict | None = None, brand_path: Path | None = None, local_pa
         path = Path(value)
         config["paths"][key] = str(path if path.is_absolute() else PROJECT / path)
     return config
+
+
+def music(config: dict | None = None) -> bool:
+    """Whether to lay background music under the voice-over (config audio.music; off unless set)."""
+    return bool(((config if config is not None else load()).get("audio") or {}).get("music", False))
