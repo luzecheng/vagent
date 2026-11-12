@@ -19,7 +19,10 @@ ZH_SYMBOL_WORDS = {"+": "加", "＋": "加", "=": "等于", "＝": "等于"}
 ZH_ACRONYM = re.compile(r"(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])")  # read as one word ("AI" -> "爱") unless spaced
 ZH_YEAR = re.compile(r"(?<!\d)(\d{4})\s*年")  # a year is said digit by digit, not as a cardinal number
 ZH_DIGITS = dict(zip("0123456789", "零一二三四五六七八九"))
-ZH_DECIMAL = re.compile(r"(?<![\d.])(\d+)\.(\d+)(?![\d.])")  # 3.2 is 三点二, not "三 二"; 1.2.3 is not a decimal
+# 3.2 is 三点二, not "三 二"; 1.2.3 is not a decimal.  Spaces between it and the Chinese around it are swallowed
+# like around a whole number: "跌到 7.3 万" is read "跌到七点三万", with no pause.
+ZH_DECIMAL = re.compile(r"(?:(?<=[\u4e00-\u9fff，、：；])\s+)?(?<![\d.])(?P<num>\d+\.\d+)(?![\d.])"
+                        r"(?:\s*(?=[\u4e00-\u9fff]))?")
 # A whole number (1,000 too), optionally a percentage.  Not when it belongs to a name, time or range: next to a
 # Latin letter, a colon or a hyphen, or after an English word and a space (GPT-4, M1, iPhone 15, 9:30,
 # 2020-2021).  Spaces between it and the Chinese around it are swallowed: "打卡 30 天" is read "打卡三十天".
@@ -27,7 +30,8 @@ ZH_INT = re.compile(r"(?:(?<=[\u4e00-\u9fff，、：；])\s+)?(?<![\dA-Za-z.:\-]
                     r"(\d{1,3}(?:,\d{3})+|\d+)(?![\d,]*\d)(?![A-Za-z:\-])(?!\.\d)"
                     r"(\s*(?=[\u4e00-\u9fff]))?")
 ZH_PERCENT = re.compile(r"(?:(?<=[\u4e00-\u9fff，、：；])\s+)?(?<![\dA-Za-z.:\-])(\d+(?:\.\d+)?)\s*[%％]")   # 12.05% is 百分之十二点零五
-ZH_LIANG_BEFORE = set("个次天本件人只条张名位种遍周倍岁斤块元台家所颗份")  # 2 + measure word is 两, not 二
+ZH_LIANG_BEFORE = set("个次天本件人只条张名位种遍周倍岁斤块元台家所颗份百千万亿")  # 2 + measure word or 百千万亿 is 两, not 二
+THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")   # the comma in 25,000 (not in "25, then")
 ZH_DASH = re.compile(r"\s*(?:——|—|--)\s*")   # a dash is a pause, not a syllable (a hyphen as in 2020-2021 stays)
 # This machine's respellings for the Chinese voice ("phrase: what to say"), e.g. a comma where the voice groups
 # characters wrongly. Personal (git-ignored); missing means no rules.
@@ -163,10 +167,11 @@ def spoken_text(text: str, lang: str) -> str:
     respellings, so a rule like "8年: 八年" cannot break "2018年". Subtitles keep the author's text."""
     for mark, repl in QUOTES.items():
         text = text.replace(mark, repl)
+    text = THOUSANDS_COMMA.sub("", text)   # "25,000" -> "25000": the English voice paused at the comma
     if lang == "zh":
         text = ZH_YEAR.sub(lambda m: "".join(ZH_DIGITS[d] for d in m.group(1)) + "年", text)
         text = ZH_PERCENT.sub(lambda m: "百分之" + _zh_decimal(m.group(1)), text)
-        text = ZH_DECIMAL.sub(lambda m: _zh_decimal(m.group()), text)
+        text = ZH_DECIMAL.sub(lambda m: _zh_decimal(m.group("num")), text)
         text = ZH_INT.sub(_zh_number, text)
         text = _respell(text, _zh_rules())
         text = ZH_SYMBOLS.sub(lambda m: ZH_SYMBOL_WORDS[m.group(1)], text)

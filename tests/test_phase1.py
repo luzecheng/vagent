@@ -203,8 +203,16 @@ def test_spoken_text_reads_whole_numbers_as_chinese_numerals():
     assert parse.spoken_text("这都过去8年了，涨了3倍", "zh") == "这都过去八年了，涨了三倍"
     assert parse.spoken_text("丢了63亿美元，有 20000 人", "zh") == "丢了六十三亿美元，有两万人"
     assert parse.spoken_text("2个人，第2次，2月4日", "zh") == "两个人，第二次，二月四日"
+    # a lone 2 before 万/千/亿/百 is 两 too (2万美元 is 两万, not 二万); 2.5万 keeps 二
+    assert parse.spoken_text("跌到2万美元，2千块，2亿，2百人，2.5万", "zh") == "跌到两万美元，两千块，两亿，两百人，二点五万"
+    # spaces around a decimal in Chinese are swallowed like around a whole number ("跌到 7.3 万" has no pause)
+    assert parse.spoken_text("跌到 7.3 万美元，1.7 万的时候", "zh") == "跌到七点三万美元，一点七万的时候"
+    assert parse.spoken_text("version 3.2 is out", "zh") == "version 三点二 is out"
     assert parse.spoken_text("至少有60%掉队，留下 40 %", "zh") == "至少有百分之六十掉队，留下百分之四十"
     assert parse.spoken_text("涨了 1,000 点", "zh") == "涨了一千点"
+    # Kokoro reads a thousands comma as a pause ("25,000" -> "25, zero, zero, zero"): drop it for the voice only
+    assert parse.spoken_text("It climbed to 25,000, then 1,200,000 and 3.5 more.", "en") == \
+        "It climbed to 25000, then 1200000 and 3.5 more."
     assert parse.spoken_text("增长了3.5倍", "zh") == "增长了三点五倍"
     # numbers that belong to a name, a time or a range are left to the voice as written
     assert parse.spoken_text("用 GPT-4 和 M1，iPhone 15 上 9:30 开会", "zh") == "用 G P T-4 和 M1，iPhone 15 上 9:30 开会"
