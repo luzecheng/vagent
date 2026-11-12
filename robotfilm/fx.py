@@ -2,9 +2,11 @@
 anchoring things in the world, the robot's joints, fog."""
 import math
 
+import cairo
+
 from robotfilm.robot_story import ICE, coin, coin_stack, glow_line, orb, smooth
 from robotfilm.walker import STAND
-from story.stage import GOLD, WHITE, ramp, text
+from story.stage import FONT, GOLD, WHITE, ramp, text
 
 P = lambda **kw: {**STAND, **kw}
 CHEER = P(ua_f=160, la_f=172, head=-12)
@@ -32,6 +34,18 @@ def sky(film, fx, fy):
 
 
 def label(film, s, x, y, a, size=40, col=WHITE):
+    """Sky text with a dark outline, so it reads on the dark sky and on the light clouds of the colour night."""
+    if a > 0 and s:
+        cr, px = film.cr, size * film.u
+        cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(px)
+        ext = cr.text_extents(s)
+        cr.move_to(x - ext.x_advance / 2, y + px * 0.35)
+        cr.text_path(s)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        cr.set_line_width(px * 0.16)
+        cr.set_source_rgba(0.03, 0.04, 0.10, 0.75 * a)
+        cr.stroke()
     text(film.cr, s, size * film.u, x, y, col, a=a, weight=1)
 
 

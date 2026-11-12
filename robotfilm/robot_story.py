@@ -26,6 +26,7 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
+from vagent import config as configmod
 from story.render import FPS
 from story.stage import GOLD, WHITE, ramp, text
 
@@ -67,17 +68,19 @@ class Sprite:
         cr.restore()
 
 
-def _sprite(rgb, mask=None):
+def _sprite(rgb, mask=None, inside=0.62):
+    """A prop cut out of its sheet.  `inside` is how opaque its dark inside is: 0.62 for the white line drawings
+    (a little of the world shows through), 1.0 for props drawn in full colour (solid objects)."""
     ys, xs = np.where((rgb.max(2) > 22) if mask is None else mask)
     y0, y1, x0, x1 = max(0, ys.min() - 8), ys.max() + 8, max(0, xs.min() - 8), xs.max() + 8
     rgb = rgb[y0:y1, x0:x1]
     m = None if mask is None else mask[y0:y1, x0:x1]
-    alpha = cutout(rgb, None if m is None else ndimage.binary_dilation(m, iterations=10))
+    alpha = cutout(rgb, None if m is None else ndimage.binary_dilation(m, iterations=10), inside)
     gray = rgb.mean(2, keepdims=True)
     return Sprite(_surface(rgb, alpha), _surface(gray * 0.35 + rgb * 0.05, alpha), x1 - x0, y1 - y0)
 
 
-def load_props(sheet: Path, machine: Path | None, names=PROPS) -> dict[str, Sprite]:
+def load_props(sheet: Path, machine: Path | None, names=PROPS, solid_props: bool = False) -> dict[str, Sprite]:
     a = np.asarray(Image.open(sheet).convert("RGB")).astype(np.float32)
     lum = a.max(2)
     # props drawn close together merge through their glow: try tighter cut-outs until each prop is one island
@@ -95,7 +98,7 @@ def load_props(sheet: Path, machine: Path | None, names=PROPS) -> dict[str, Spri
     boxes.sort(key=lambda b: (row(b[0]), b[0][1].start))
     out = {}
     for name, (sl, i) in zip(names, boxes):
-        out[name] = _sprite(a, lab == i)
+        out[name] = _sprite(a, lab == i, 1.0 if solid_props else 0.62)
     if machine is None:
         return out
     b = np.asarray(Image.open(machine).convert("RGB")).astype(np.float32)
@@ -171,10 +174,11 @@ class Film(WordsFilm):
         self.ep = beats
         self.beats = beats.BEATS
         # robot (default): dark blue-black silhouettes with thin white outlines; story: the 「一笔」 night world
-        self.world = StoryWorld(W, H) if world == "story" else World(W, H)
+        self.world = StoryWorld(W, H) if world == "story" else World(W, H, palette="color" if world == "color" else "night")
         self.walker = Walker(load_side_parts(SIDE_PARTS))
         machine = getattr(beats, "MACHINE", folder / "frames/样帧04_经济机器_v1.png")
-        self.props = load_props(folder / "robot2/frames/道具图_v1.png", machine, getattr(beats, "PROPS", PROPS))
+        self.props = load_props(folder / "robot2/frames/道具图_v1.png", machine, getattr(beats, "PROPS", PROPS),
+                                getattr(beats, "SOLID_PROPS", False))     # beats: SOLID_PROPS = True for colour props
         self.height = (250 if self.portrait else 300) * self.u   # portrait: smaller next to the larger mountains
         self.front = Front(FRONT, self.height * 1.02)
         self.hip_x = W * (0.30 if self.portrait else 0.36)
@@ -425,8 +429,10 @@ def main(argv=None):
     ap.add_argument("--preview", action="store_true")
     ap.add_argument("--sheet", action="store_true")
     ap.add_argument("--at", type=float, default=0.7)
-    ap.add_argument("--world", choices=["robot", "story"], default="robot",
-                    help="robot: blue-black silhouettes (default); story: the 「一笔」 forested night world")
+    ap.add_argument("--world", choices=["robot", "color", "story"], default="color",
+                    help="color: the user's favourite night in colour (navy sky, big soft lit clouds, green hills; "
+                         "the default since 2026-11-11); robot: the original blue-black silhouettes; "
+                         "story: the 「一笔」 forested night world")
     args = ap.parse_args(argv)
     folder = args.folder.resolve()
     from vagent.audio.mix import mix
@@ -446,7 +452,7 @@ def main(argv=None):
         film.draw(cairo.Context(surf), 0.0)
         surf.write_to_png(str(cover_png))
         final, stats = mix(folder / "build" / f"voice{tag}.wav", tl["duration"], 19, folder / "build" / f"robot2_{lang}",
-                           music=True)
+                           music=configmod.music())
         fps = FPS
         if args.preview:
             W, H, fps = W // 2, H // 2, 15
