@@ -70,7 +70,9 @@ def test_camera_moves_smoothly_and_never_shows_past_the_frame(tmp_path):
     zs = [film.zoom(f / FPS) for f in range(int(film.tl["duration"] * FPS))]
     assert min(zs) >= 1.0
     assert max(zs) > 1.04, "the camera should push in while the robot talks"
-    assert max(abs(b - a) for a, b in zip(zs, zs[1:])) < 0.01, "no jumps at shot changes"
+    assert max(abs(b / a - 1) for a, b in zip(zs, zs[1:])) < 0.03, "no jumps at shot changes"
+    heads = [_on_screen(film, f / FPS, film.hip_x, film.ground - film.height) for f in range(len(zs))]
+    assert max(abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(heads, heads[1:])) < 40 * film.u, "the robot glides"
 
 
 def test_camera_is_wide_when_the_robot_arrives_and_closest_on_quotes(tmp_path):
@@ -97,9 +99,9 @@ def _frame(film, t):
 
 
 def _on_screen(film, t, x, y):
-    """Where a point of the world (unzoomed frame coordinates) is on screen with the camera's zoom at t."""
-    (fx, fy), z = film.cam_focus, film.zoom(t)
-    return int(fx + (x - fx) * z), int(fy + (y - fy) * z)
+    """Where a point of the world (unzoomed frame coordinates) is on screen with the camera at t."""
+    z, ax, ay = film.camera(t)
+    return int(ax + x * z), int(ay + y * z)
 
 
 def _lit_film(tmp_path, glow):
@@ -146,3 +148,93 @@ def test_street_lamps_light_a_pool_on_the_ground():
     head = int(lamp_x[0] + 34 * w.s)
     assert lit[y, head] > dark[y, head] + 8
     assert World(1080, 1920, palette="color").c.get("lamp_pool", 0) > 0, "the colour night has lamp pools"
+
+
+def _prop_film(tmp_path, opts=None, beat=None):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots = [{"id": 1, "start": 0.0, "end": 6.0, "voice_end": 5.7, "subs": []}]
+    b = {"stations": [("a", 0.7, 150, opts or {})], **(beat or {})}
+    mod = types.SimpleNamespace(BEATS={1: b}, MACHINE=None, SOLID_PROPS=True,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": 6.0, "shots": shots}, 1080, 1920, mod, "zh", "color")
+
+
+def test_swaying_props_move_in_the_wind(tmp_path):
+    still = _prop_film(tmp_path, {})
+    sway = _prop_film(tmp_path / "s", {"sway": True})
+    x0, y0 = _on_screen(sway, 3.0, sway.W * 0.7 - 160 * sway.u, sway.ground - 150 * sway.u)
+    x1, y1 = _on_screen(sway, 3.0, sway.W * 0.7 + 160 * sway.u, sway.ground - 60 * sway.u)
+    box = lambda img: img[y0:y1, x0:x1]
+    # the same moment with and without wind: everything else in the frame is identical
+    tilt = lambda t: np.abs(box(_frame(sway, t)) - box(_frame(still, t))).sum()
+    a, b = tilt(3.0), tilt(4.1)
+    assert a > 1000 and b > 1000 and a != b, "it leans, and by a different amount as time goes on"
+
+
+def test_smoke_rises_above_a_prop(tmp_path):
+    plain, smoky = _prop_film(tmp_path, {}), _prop_film(tmp_path / "s", {"smoke": True})
+    x0, y0 = _on_screen(smoky, 3.0, smoky.W * 0.7 - 80 * smoky.u, smoky.ground - 420 * smoky.u)
+    x1, y1 = _on_screen(smoky, 3.0, smoky.W * 0.7 + 80 * smoky.u, smoky.ground - 170 * smoky.u)
+    assert _frame(smoky, 3.0)[y0:y1, x0:x1].sum() > _frame(plain, 3.0)[y0:y1, x0:x1].sum()
+
+
+def test_the_robot_can_hold_a_prop(tmp_path):
+    plain = _prop_film(tmp_path)
+    holding = _prop_film(tmp_path / "h", beat={"hold": ("b", 60)})
+    from robotfilm.fx import joints
+    hx, hy = plain.hand(joints(plain, plain.pose(3.0)))
+    x0, y0 = _on_screen(plain, 3.0, hx - 50 * plain.u, hy - 80 * plain.u)
+    x1, y1 = _on_screen(plain, 3.0, hx + 50 * plain.u, hy + 20 * plain.u)
+    assert np.abs(_frame(holding, 3.0)[y0:y1, x0:x1] - _frame(plain, 3.0)[y0:y1, x0:x1]).sum() > 1000
+
+
+def test_fireflies_drift_over_the_grass():
+    from robotfilm.world import World
+    import cairo
+
+    def render(n, t):
+        w = World(1080, 1920, palette="color")
+        w.c = {**w.c, "fireflies": n}
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+        w.draw(cairo.Context(surf), 0.0, t)
+        surf.flush()
+        return w, np.ndarray((1920, 1080, 4), np.uint8, surf.get_data()).astype(int)[..., :3].sum(2)
+
+    w, on = render(40, 2.0)
+    _, off = render(0, 2.0)
+    band = slice(int(w.horizon - 260 * w.u), int(w.horizon))
+    assert on[band].sum() > off[band].sum()
+    assert World(1080, 1920, palette="color").c.get("fireflies", 0) > 0, "the colour night has fireflies"
+
+
+
+def test_the_robot_stands_on_the_left_third_line():
+    import robotfilm.robot_story as rs
+    assert rs.ROBOT_X == 0.38
+
+
+def test_shot_sizes_change_and_quotes_get_a_close_up(tmp_path):
+    film = _talky_film(tmp_path)
+    size = [film.camera(s["end"] - 1e-3)[0] for s in film.shots]
+    assert size[1] < 1.2, "a shot that arrives somewhere ends wide enough to show the place"
+    assert size[3] >= 2.0, "the quote shot is a close-up"
+    assert any(1.4 <= z < 2.0 for z in size), "there are half-body shots"
+    names = [film.shot_size(i) for i in range(len(film.shots))]
+    assert all(not (a == b == c) for a, b, c in zip(names, names[1:], names[2:])), names
+
+
+def test_sky_words_stay_put_while_the_camera_moves():
+    import cairo
+    from robotfilm.fx import label
+    film = types.SimpleNamespace(portrait=True, u=1.0)
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+    cr = cairo.Context(surf)
+    cr.translate(540, 1000)
+    cr.scale(2.2, 2.2)                     # a close-up
+    cr.translate(-540, -1000)
+    film.cr = cr
+    label(film, "测试", 540, 300, 1.0, 60)
+    surf.flush()
+    img = np.ndarray((1920, 1080, 4), np.uint8, surf.get_data())[..., 3]
+    ys, xs = np.nonzero(img > 128)
+    assert abs(ys.mean() - 300) < 40 and abs(xs.mean() - 540) < 40, (ys.mean(), xs.mean())

@@ -43,9 +43,13 @@ FRONT = [ASSETS / "front_00_stand.png", ASSETS / "front_03_arm_shoulder.png", AS
 PROPS = ["city", "terminal", "factory", "scale", "bench", "stairs", "book", "tablet", "bag"]
 FORMATS = {"zh": ("portrait", 1080, 1920), "en": ("landscape", 1920, 1080)}
 BLEND = 0.3                      # walk <-> action pose blending
-CAM_TALK = (1.05, 1.11)          # camera push-in while the robot talks, alternating shot by shot
-CAM_QUOTE = 1.16                 # closer on quote shots
+ROBOT_X = 0.38                   # the robot stands on the left-third line (props go toward the right one)
+CAM_TALK = (1.05, 1.11)          # "full" shots push in a little, alternating shot by shot
+CAM_SIZES = {"medium": (1.9, 1.5), "close": (2.8, 2.2)}   # zoom on the robot (portrait, landscape)
+TURNS = ("medium", "full", "close")                        # talking shots take turns
+WIDE = (1.0, 0.0, 0.0)
 SHADOW = (0.0, 0.0, 0.02)
+SMOKE = (0.85, 0.86, 0.9)
 WARM_LIGHT = (1.0, 0.72, 0.38)     # station glow=True: firelight / lamplight
 smooth = lambda k: k * k * (3 - 2 * k)
 
@@ -185,7 +189,7 @@ class Film(WordsFilm):
                                 getattr(beats, "SOLID_PROPS", False))     # beats: SOLID_PROPS = True for colour props
         self.height = (250 if self.portrait else 300) * self.u   # portrait: smaller next to the larger mountains
         self.front = Front(FRONT, self.height * 1.02)
-        self.hip_x = W * (0.30 if self.portrait else 0.36)
+        self.hip_x = W * ROBOT_X
         self.ground = self.world.horizon
         self._plan()
 
@@ -266,38 +270,83 @@ class Film(WordsFilm):
         self._plan_camera()
 
     # ---------- camera ----------
+    # The camera is an affine map: screen = a + z * point (z zoom, a offset), eased from shot to shot.
     def _plan_camera(self):
-        """How close the camera is at the end of each shot.  It is wide (1.0) when the robot arrives somewhere,
-        then slowly pushes in while it talks: a little or a little more in turn, so a run of talking shots
-        breathes instead of freezing, closest on quote shots.  A beat can set its own with cam=<zoom>."""
-        self.cam_in, self.cam_to = [], []
-        z, talk = 1.0, 0
-        for i, s in enumerate(self.shots):
-            b = self.beat(i)
-            if "cam" in b:
-                to = b["cam"]
-            elif s.get("quote"):
-                to = CAM_QUOTE
-            else:
-                to = CAM_TALK[talk % 2]
-                talk += 1
-            self.cam_in.append(z)
-            self.cam_to.append(to)
-            z = to
-        top = self.H * (0.13 if self.portrait else 0.10)
-        self.cam_focus = (self.W * 0.48, (top + self.ground) / 2)   # between the robot and its props, mid-sky
+        """The shot size each shot ends on, and the camera that gives it.
 
-    def zoom(self, t):
+        full: the whole place, pushing in a little (1.05 / 1.11 in turn); medium: the robot from close by;
+        close: the robot's head and shoulders.  A shot that walks or brings props ends full (it shows the place),
+        unless it would be the third full in a row and has 4 s left after arriving (then it pushes in to medium);
+        a quote shot is a close-up, the rest take turns medium / full / close, never three of one size in a row.
+        The shot before a walk and very short shots don't go close (the camera would have to rush).  A beat can
+        choose with cam="full" | "medium" | "close"."""
+        n = len(self.shots)
+        walks = [self.beat(i).get("walk", 0.0) > 0 for i in range(n)]
+        names, turn = [], 0
+        for i, s in enumerate(self.shots):
+            b, dur = self.beat(i), s["end"] - s["start"]
+            if b.get("cam") in CAM_SIZES:
+                name = b["cam"]
+            elif walks[i] or b.get("stations"):
+                # shows the place; but after two full shots, a long one pushes in once the robot is there
+                settled = dur - min(b.get("walk", 0.0), dur)
+                name = "medium" if len(names) >= 2 and names[-1] == names[-2] == "full" and settled >= 4.0 else "full"
+            elif s.get("quote"):
+                name = "close"
+            elif dur < 2.5 and names:
+                name = names[-1] if names[-1] != "close" else "medium"
+            else:
+                name = TURNS[turn % len(TURNS)]
+                turn += 1
+                if len(names) >= 2 and names[-1] == names[-2] == name:
+                    name = TURNS[turn % len(TURNS)]
+                    turn += 1
+            if name == "close" and (i + 1 < n and walks[i + 1]):
+                name = "medium"
+            names.append(name)
+        self.sizes = names
+        talk = 0
+        self.cam_to = []
+        for i, name in enumerate(names):
+            if name == "full":
+                self.cam_to.append(self._full(CAM_TALK[talk % 2]))
+                talk += 1
+            else:
+                self.cam_to.append(self._on_robot(name))
+        self.cam_in = [WIDE] + self.cam_to[:-1]
+
+    def _full(self, z):
+        """Pushed in a little on the middle of the place, between the robot and its props."""
+        top = self.H * (0.13 if self.portrait else 0.10)
+        fx, fy = self.W * 0.5, (top + self.ground) / 2
+        return (z, fx * (1 - z), fy * (1 - z))
+
+    def _on_robot(self, name):
+        """Closer on the robot, its head kept on the left-third line and in the upper part of the frame."""
+        z = CAM_SIZES[name][0 if self.portrait else 1]
+        hx, hy = self.hip_x, self.ground - self.height * 0.92
+        tx, ty = self.W * ROBOT_X, self.H * (0.40 if self.portrait else 0.36)
+        return (z, tx - z * hx, ty - z * hy)
+
+    def shot_size(self, i):
+        return self.sizes[i]
+
+    def camera(self, t):
+        """(z, ax, ay) at time t: a point p of the frame is drawn at (ax + z * px, ay + z * py)."""
         i = self.shot_at(t)
         s = self.shots[i]
         lt, dur = t - s["start"], s["end"] - s["start"]
-        z0, to = self.cam_in[i], self.cam_to[i]
+        c0, c1 = self.cam_in[i], self.cam_to[i]
         w = min(self.beat(i).get("walk", 0.0), dur)
+        mix = lambda p, q, k: tuple(x + (y - x) * k for x, y in zip(p, q))
         if w > 0:
             if lt < w:                            # walking: back out to the wide shot by the time it stops
-                return z0 + (1.0 - z0) * smooth(lt / w)
-            z0, lt, dur = 1.0, lt - w, dur - w
-        return z0 + (to - z0) * smooth(min(1.0, lt / dur)) if dur > 0 else to
+                return mix(c0, WIDE, smooth(lt / w))
+            c0, lt, dur = WIDE, lt - w, dur - w
+        return mix(c0, c1, smooth(min(1.0, lt / dur))) if dur > 0 else c1
+
+    def zoom(self, t):
+        return self.camera(t)[0]
 
     def shot_index(self, shot_id):
         return next(k for k, sh in enumerate(self.shots) if sh["id"] == shot_id)
@@ -364,11 +413,9 @@ class Film(WordsFilm):
         b = self.beat(i)
         travel = self.trav(t)
         cr.save()                                 # the camera moves the world, props, robot and sky words ...
-        fx_, fy_ = self.cam_focus
-        z = self.zoom(t)
-        cr.translate(fx_, fy_)
+        z, ax, ay = self.camera(t)
+        cr.translate(ax, ay)
         cr.scale(z, z)
-        cr.translate(-fx_, -fy_)
         self.world.draw(cr, travel, t)
         for st in self.stations:
             x = st["x"] - travel
@@ -376,6 +423,8 @@ class Film(WordsFilm):
                 a = st.get("alpha", 1.0) * ramp(t, st["t_in"] - 0.01, st["t_in"] + 0.7) * (1 - ramp(t, st["t_out"] - 0.9, st["t_out"]))
                 if st["i"] == 0:
                     a = st.get("alpha", 1.0) * (1 - ramp(t, st["t_out"] - 0.9, st["t_out"]))   # there from the first frame
+                if "taken" in st:                 # picked up by the robot that many seconds into its shot
+                    a *= 1 - ramp(t, st["t_in"] + st["taken"], st["t_in"] + st["taken"] + 0.25)
                 dim = st["dim"](t, self) if callable(st.get("dim")) else st.get("dim", 0.0)
                 base = self.ground + st.get("sink", 0) * self.u
                 h = st["h"] * (0.35 + 0.65 * smooth(ramp(t, st["t_in"] + 0.6, st["t_in"] + 3.5))) if st.get("grow") else st["h"]
@@ -388,7 +437,17 @@ class Film(WordsFilm):
                     soft_ellipse(cr, x, base + 10 * self.u, h * 1.9, h * 0.26, col, 0.48 * k)
                 w = h * sp.w / sp.h                    # soft contact shadow, so it stands on the ground
                 soft_ellipse(cr, x, base + 3 * self.u, w * 0.55, max(5 * self.u, w * 0.06), SHADOW, 0.55 * a)
+                if st.get("sway"):                # trees and plants: a gentle wind, the base stays put
+                    cr.save()
+                    cr.translate(x, base)
+                    cr.rotate(0.035 * math.sin(t * 1.3 + x * 0.002) + 0.012 * math.sin(t * 2.9 + 1.0))
+                    cr.translate(-x, -base)
                 sp.draw(cr, x, base, h, a, dim, st.get("flip", False))
+                if st.get("sway"):
+                    cr.restore()
+                if st.get("smoke"):               # smoke or steam rising from it and drifting away
+                    self._smoke(cr, x, base - h * (st["smoke"] if not isinstance(st["smoke"], bool) else 0.85), h, t,
+                                a * (1 - 0.6 * dim))
         ctx = {"i": i, "t": t, "lt": lt, "dur": s["end"] - s["start"], "walk": b.get("walk", 0.0),
                "voice": s["voice_end"] - s["start"], "lang": self.lang}
         q = self.pose(t)
@@ -412,10 +471,24 @@ class Film(WordsFilm):
         else:
             J = self.robot(cr, self.hip_x, self.ground - lift, q, chest=extra.get("chest", 1.0))
         ctx["J"] = J
+        if J is not None and b.get("hold"):      # the robot holds a prop: hold=(prop, height in design px[, from s])
+            name, hh, *since = b["hold"]
+            k = ramp(lt, since[0], since[0] + 0.25) if since else 1.0
+            hx, hy = self.hand(J)
+            self.props[name].draw(cr, hx + 6 * self.u, hy + hh * self.u * 0.35, hh * self.u, k)
         if fx and not b.get("fx_behind"):
             fx(self, cr, ctx)
         cr.restore()                              # ... but not the subtitles and quotes: they stay put
         self._words(cr, i, t)
+
+    def _smoke(self, cr, x, top, h, t, a):
+        """Soft puffs rising from (x, top), growing and fading as they drift up and to the right."""
+        for k in range(10):
+            ph = (t * 0.35 + k / 10) % 1.0
+            px = x + math.sin(ph * 3 + k) * h * 0.12 + ph * h * 0.25
+            py = top - ph * h * 1.5
+            r = h * (0.07 + 0.14 * ph)
+            soft_ellipse(cr, px, py, r, r, SMOKE, 0.22 * a * math.sin(math.pi * ph))
 
     def _front(self, cr, ctx, front):
         """Turn to the viewer: a hard cut with a short white flash, then the front drawings cross-fading (only the

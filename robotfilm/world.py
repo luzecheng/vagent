@@ -18,6 +18,7 @@ from story.scenery import Scenery
 
 HORIZON = 0.68
 LAMP_POOL = (0.98, 0.9, 0.72)       # warm lamp light on the ground
+FIREFLY = (1.0, 0.95, 0.6)
 
 
 def soft_ellipse(cr, cx, cy, rx, ry, rgb, a):
@@ -52,7 +53,7 @@ PALETTES = {
                   clouds=dict(light=(0.88, 0.86, 0.88), shade=(0.36, 0.38, 0.48), cover=0.50, edge=0.16, seed=7),
                   far=(0.15, 0.17, 0.30), near=(0.05, 0.13, 0.11), pine=(0.07, 0.21, 0.14),
                   far_line=(0.70, 0.74, 0.90), near_line=(0.55, 0.82, 0.66), pine_line=(0.58, 0.86, 0.62),
-                  lamp_pool=0.22, ground_top=(0.07, 0.08, 0.10), ground_low=(0.015, 0.018, 0.03), sheen=(1.0, 0.82, 0.55),
+                  lamp_pool=0.22, fireflies=26, ground_top=(0.07, 0.08, 0.10), ground_low=(0.015, 0.018, 0.03), sheen=(1.0, 0.82, 0.55),
                   grid=(0.80, 0.82, 0.90)),
 }
 
@@ -123,6 +124,8 @@ class World:
         self.pines = [(rnd.uniform(0, 1), rnd.uniform(0.6, 1.3)) for _ in range(120)]
         self.clouds = _cloud_layer(W * 3, int(self.horizon), self.u, self.c["clouds"]) if self.c.get("clouds") else None
         self.props = Scenery(SimpleNamespace(W=W), seed)
+        fr = random.Random(seed + 7)                # fireflies over the grass: (x, height above the horizon, phase)
+        self.fireflies = [(fr.uniform(0, span), fr.uniform(20, 260) * self.u, fr.uniform(0, 6.3)) for _ in range(80)]
 
     def _ridge(self, rnd, lo, hi, speed, n):
         """A looping ridge line: n points over one repeat (3 frame widths), heights as fractions of the frame."""
@@ -170,11 +173,25 @@ class World:
             self._clouds(cr, travel, t, c["clouds"])
         self._layer(cr, self.far, travel, c["far"], c["far_line"], 0.22, pines=False)
         self._layer(cr, self.near, travel, c["near"], c["near_line"], 0.42, pines=True)
+        if c.get("fireflies"):
+            self._fireflies(cr, travel, t, c["fireflies"])
         self._ground(cr, travel)
         if c.get("lamp_pool"):
             self._lamp_pools(cr, travel, c["lamp_pool"])
         st = SimpleNamespace(W=W, horizon=hz, s=self.s, cam=SimpleNamespace(travel=travel))
         self.props.roadside(cr, st, t, 1.0)
+
+    def _fireflies(self, cr, travel, t, n):
+        """A few warm points of light drifting and blinking over the grass, in front of the hills."""
+        span, u = self.W * 3, self.u
+        for k, (x, up, ph) in enumerate(self.fireflies[:n]):
+            sx = (x - travel * 0.6 + 24 * u * math.sin(t * 0.5 + ph)) % span
+            if sx > self.W + 20 * u:
+                continue
+            y = self.horizon - up + 12 * u * math.sin(t * 0.7 + ph * 2)
+            a = (0.5 + 0.5 * math.sin(t * 1.8 + ph * 3)) ** 2
+            soft_ellipse(cr, sx, y, 9 * u, 9 * u, FIREFLY, 0.45 * a)
+            soft_ellipse(cr, sx, y, 2.2 * u, 2.2 * u, FIREFLY, 0.95 * a)
 
     def _lamp_pools(self, cr, travel, a):
         """A soft circle of lamp light on the ground under each street lamp's head (the colour night)."""

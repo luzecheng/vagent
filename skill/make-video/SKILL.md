@@ -55,6 +55,19 @@ Do not stop for storyboard confirmation (the user wants the video made directly)
    props are cut out as solid objects), `MACHINE = None`, and
    `BEATS[shot id]` = walk seconds, pose, `stations` (props the robot stops at; `out` to remove them early),
    `fx` (code-drawn bubbles, labels, charts, coins…). Words on screen come from the script only.
+   Make it alive — use these wherever the script allows (the user wants the best video code can make):
+   - station options: `glow=True` or `(r,g,b)` for anything that gives light (fire, screen, lamp, open door),
+     `flicker=True` for fire; `smoke=True` (or the height share it rises from) for fire, pots, coffee;
+     `sway=True` for trees and plants; `taken=<s>` to make a prop vanish when the robot picks it up;
+   - beat `hold=(prop, height, from_s)` puts a prop in the robot's hand (pair it with `taken` and a pose that
+     bends down first, e.g. `lambda lt, d: BEND if lt < 0.8 else LIFT`); put the prop right in front of the
+     robot (station x about 0.44);
+   - the camera chooses shot sizes by itself (full when arriving, quotes close, talk shots take turns
+     medium / full / close; the robot stands on the 38 % line); override with `cam="full"|"medium"|"close"`;
+   - sky words via `fx.label` stay fixed on screen while the camera moves; draw anything that belongs to them
+     (a strike-through, an arrow between two labels) inside `with fx.screen_space(cr):`, and measure labels
+     with `fx.label_width`. Things standing in the world (bubbles over the robot, effects at a prop) are
+     drawn normally and move with the camera.
 4. **Check sheets, then render.** `.venv/bin/python -m robotfilm.robot_story <folder> --sheet` (seconds) writes
    `robot2/review/sheet_*.png`: look at both, fix overlaps / props piling up / unreadable labels, repeat. After the
    voice is done: `.venv/bin/python -m robotfilm.robot_story <folder>` in the background (~3–4 min). Extract a few

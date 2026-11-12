@@ -1,6 +1,7 @@
 """Shared helpers for robot-story beats (episode files robot2/beats.py): poses, sky placement, labels, timing,
 anchoring things in the world, the robot's joints, fog."""
 import math
+from contextlib import contextmanager
 
 import cairo
 
@@ -33,6 +34,18 @@ def sky(film, fx, fy):
     return fx * film.W, top + fy * (film.ground - film.height * 1.15 - top)
 
 
+@contextmanager
+def screen_space(cr):
+    """Draw in the frame itself, not in the camera's view: sky words (and lines drawn on them, like a
+    strike-through) stay where they are while the camera pushes in on the robot."""
+    cr.save()
+    cr.identity_matrix()
+    try:
+        yield cr
+    finally:
+        cr.restore()
+
+
 def label_scale(film):
     """Sky words are drawn larger than their nominal size: 1.5x on the phone (portrait), 1.25x in landscape, so
     they read at a glance on a small screen."""
@@ -42,9 +55,10 @@ def label_scale(film):
 def label_width(film, s, size=40):
     """Width in px of a fully shown label (for strike-through lines and the like)."""
     cr = film.cr
-    cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-    cr.set_font_size(size * film.u * label_scale(film))
-    return cr.text_extents(s).x_advance
+    with screen_space(cr):
+        cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(size * film.u * label_scale(film))
+        return cr.text_extents(s).x_advance
 
 
 def label(film, s, x, y, a, size=40, col=WHITE):
@@ -52,6 +66,11 @@ def label(film, s, x, y, a, size=40, col=WHITE):
     It comes in growing a little and rising into place as it fades in."""
     if a <= 0 or not s:
         return
+    with screen_space(film.cr):
+        _label(film, s, x, y, a, size, col)
+
+
+def _label(film, s, x, y, a, size, col):
     cr = film.cr
     px = size * film.u * label_scale(film) * (0.88 + 0.12 * a)
     y += (1 - a) * 16 * film.u
