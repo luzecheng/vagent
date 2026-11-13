@@ -1,11 +1,12 @@
 import re
 
+import numpy as np
 import pytest
 
 from vagent import config as configmod
 from vagent.script import parse
 from vagent.subtitles import segment
-from vagent.tts.base import proportional_timings
+from vagent.tts.base import SR, proportional_timings
 
 CONFIG = configmod.load()
 
@@ -137,6 +138,8 @@ def test_asr_error_rate():
     assert error_rate("每天读书", "每天读书", "zh") == 0
     assert error_rate("每天读书", "美甜读书", "zh") == pytest.approx(0.5)
     assert error_rate("Hold the line.", "hold the line", "en") == 0
+    # Whisper writes a spoken year as digits; the narration was asked to say it digit by digit
+    assert error_rate("一九八二年，他判断错了。", "1982年他判断错了", "zh") == 0
 
 
 def test_fresh_and_cached_narration_are_identical(tmp_path):
@@ -173,3 +176,165 @@ def test_local_config_overrides_brand_and_defaults(tmp_path, monkeypatch):
     assert config["tts"]["en"]["provider"] == "kokoro"                       # untouched keys survive
     assert configmod.load(local_path=tmp_path / "missing.yaml")["tts"]["zh"]["provider"] == "kokoro"
     assert configmod.load({"tts": {"zh": {"voice": "x"}}}, local_path=local)["tts"]["zh"]["voice"] == "x"  # CLI wins
+
+
+def test_spoken_text_reads_math_symbols_aloud_in_chinese():
+    # CosyVoice skips "+" and garbles "=" (seen: "梦想C时现实C位决心空"), so zh narration spells them out
+    formula = "他给过一个公式：梦想 + 现实 + 决心 = 成功的人生。"
+    assert parse.spoken_text(formula, "zh") == "他给过一个公式：梦想加现实加决心等于成功的人生。"
+    assert parse.spoken_text("一＋一＝二", "zh") == "一加一等于二"
+    assert parse.spoken_text("dreams + reality = a successful life", "en") == "dreams + reality = a successful life"
+    assert parse.spoken_text("“享受”", "zh") == "享受"
+
+
+def test_spoken_text_reads_years_digit_by_digit_in_chinese():
+    # CosyVoice read "1982 年" as a cardinal, "一千九百八十二年"; a year is said digit by digit
+    assert parse.spoken_text("1982 年，他公开预测经济会崩溃", "zh") == "一九八二年，他公开预测经济会崩溃"
+    assert parse.spoken_text("2006年和2026 年", "zh") == "二零零六年和二零二六年"
+    assert parse.spoken_text("1980年代", "zh") == "一九八零年代"
+    assert parse.spoken_text("借了四千美元，花了 4000 元", "zh") == "借了四千美元，花了四千元"  # a cardinal, not a year
+    assert parse.spoken_text("In 1982 he was wrong.", "en") == "In 1982 he was wrong."
+
+
+def test_spoken_text_reads_whole_numbers_as_chinese_numerals():
+    # CosyVoice misread digits on its own: "打卡 30 天" came out "三xi天", "重复了 100 遍" as "十遍"
+    assert parse.spoken_text("打卡 30 天", "zh") == "打卡三十天"
+    assert parse.spoken_text("重复了 100 遍。", "zh") == "重复了一百遍。"
+    assert parse.spoken_text("这都过去8年了，涨了3倍", "zh") == "这都过去八年了，涨了三倍"
+    assert parse.spoken_text("丢了63亿美元，有 20000 人", "zh") == "丢了六十三亿美元，有两万人"
+    assert parse.spoken_text("2个人，第2次，2月4日", "zh") == "两个人，第二次，二月四日"
+    # a lone 2 before 万/千/亿/百 is 两 too (2万美元 is 两万, not 二万); 2.5万 keeps 二
+    assert parse.spoken_text("跌到2万美元，2千块，2亿，2百人，2.5万", "zh") == "跌到两万美元，两千块，两亿，两百人，二点五万"
+    # spaces around a decimal in Chinese are swallowed like around a whole number ("跌到 7.3 万" has no pause)
+    assert parse.spoken_text("跌到 7.3 万美元，1.7 万的时候", "zh") == "跌到七点三万美元，一点七万的时候"
+    assert parse.spoken_text("version 3.2 is out", "zh") == "version 三点二 is out"
+    assert parse.spoken_text("至少有60%掉队，留下 40 %", "zh") == "至少有百分之六十掉队，留下百分之四十"
+    assert parse.spoken_text("涨了 1,000 点", "zh") == "涨了一千点"
+    # Kokoro reads a thousands comma as a pause ("25,000" -> "25, zero, zero, zero"): drop it for the voice only
+    assert parse.spoken_text("It climbed to 25,000, then 1,200,000 and 3.5 more.", "en") == \
+        "It climbed to 25000, then 1200000 and 3.5 more."
+    assert parse.spoken_text("增长了3.5倍", "zh") == "增长了三点五倍"
+    # numbers that belong to a name, a time or a range are left to the voice as written
+    assert parse.spoken_text("用 GPT-4 和 M1，iPhone 15 上 9:30 开会", "zh") == "用 G P T-4 和 M1，iPhone 15 上 9:30 开会"
+    assert parse.spoken_text("2020-2021", "zh") == "2020-2021"
+    assert parse.spoken_text("I did it 30 times.", "en") == "I did it 30 times."
+
+
+def test_spoken_text_spells_out_capital_letter_acronyms_in_chinese():
+    # CosyVoice reads a run of capitals as one word ("用AI" came out as "用爱"); spaced, it says each letter
+    assert parse.spoken_text("就是学会用 AI。", "zh") == "就是学会用 A I。"
+    assert parse.spoken_text("借助AI，做出了工具", "zh") == "借助A I，做出了工具"
+    assert parse.spoken_text("问问CEO和PPT", "zh") == "问问C E O和P P T"
+    assert parse.spoken_text("iPhone 和 Excel 不变", "zh") == "iPhone 和 Excel 不变"  # not acronyms
+    assert parse.spoken_text("ABCDEF 太长不拆", "zh") == "ABCDEF 太长不拆"
+    assert parse.spoken_text("Learn to use AI.", "en") == "Learn to use AI."
+
+
+def test_spoken_text_turns_a_chinese_dash_into_a_pause():
+    # CosyVoice voiced "——" as a syllable (heard "心里还在说虚应该")
+    assert parse.spoken_text("心里还在说——不应该啊。", "zh") == "心里还在说，不应该啊。"
+    assert parse.spoken_text("心里还在说--不应该啊。", "zh") == "心里还在说，不应该啊。"
+    assert parse.spoken_text("我们——包括你——都一样", "zh") == "我们，包括你，都一样"
+    assert parse.spoken_text("2020-2021", "zh") == "2020-2021"
+
+
+def test_audio_check_compares_against_what_was_meant_to_be_spoken(monkeypatch):
+    from vagent.qa import audio_check
+
+    monkeypatch.setattr(audio_check, "transcribe", lambda *a: "梦想加现实加决心等于成功的人生")
+    timeline = {"sentences": [{"id": 1, "text": "梦想 + 现实 + 决心 = 成功的人生", "clip_start": 0, "clip_end": 1}]}
+    result = audio_check.check(np.zeros(SR, np.float32), timeline, "zh")
+    assert result["flagged"] == []
+
+
+def test_a_line_ending_in_a_comma_continues_on_the_next_line():
+    # each sentence is voiced on its own; a clause cut at a line break was read with a final cadence
+    raw = "开头一句。\n\n没有必要通过一个住址，\n向谁证明自己过得好。\n\n我们生活中有多少选择，\n都像租房一样？\n我给自己写下一条原则：\n做一个超级现实的人。"
+    texts = [s.text for s in parse.split(raw).sentences]
+    assert texts == ["开头一句。", "没有必要通过一个住址，向谁证明自己过得好。", "我们生活中有多少选择，都像租房一样？",
+                     "我给自己写下一条原则：", "做一个超级现实的人。"]
+    assert [s.text for s in parse.split("第一行，\n第二行。\n第三行。").sentences] == ["第一行，第二行。", "第三行。"]
+
+
+def test_a_line_ending_in_a_dash_continues_on_the_next_line():
+    # "变成了——" leads into the next line; voiced alone it ended on a full stop's cadence
+    raw = "从“会什么”，变成了——\n知道要什么。\n另一句。"
+    sentences = parse.split(raw).sentences
+    assert [s.text for s in sentences] == ["从“会什么”，变成了——知道要什么。", "另一句。"]
+    assert parse.spoken_text(sentences[0].text, "zh") == "从会什么，变成了，知道要什么。"
+    for dash in ("—", "--"):
+        assert [s.text for s in parse.split(f"变成了{dash}\n知道要什么。").sentences] == [f"变成了{dash}知道要什么。"]
+
+
+def test_spoken_rules_change_only_what_the_voice_reads(tmp_path, monkeypatch):
+    """A phrase the Chinese voice groups wrongly ("双十|一下单") is respelled for the voice only."""
+    rules = tmp_path / "zh_spoken.yaml"
+    rules.write_text("双十一下单: 双十一，下单\n十一: 十 一\n", encoding="utf-8")
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    assert parse.spoken_text("双十一下单前，先想一想", "zh") == "双十一，下单前，先想一想"  # longest rule wins
+    assert parse.spoken_text("十一月", "zh") == "十 一月"
+    assert parse.spoken_text("Double 11 双十一下单", "en") == "Double 11 双十一下单"
+    script = parse.split("双十一下单前，先想一想。")
+    assert script.sentences[0].text.startswith("双十一下单前")  # subtitles keep the author's text
+
+
+def test_spoken_rules_file_is_optional_and_reread_when_edited(tmp_path, monkeypatch):
+    rules = tmp_path / "zh_spoken.yaml"
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    assert parse.spoken_text("双十一下单", "zh") == "双十一下单"
+    rules.write_text("# comment only\n", encoding="utf-8")
+    assert parse.spoken_text("双十一下单", "zh") == "双十一下单"
+    rules.write_text("双十一下单: 双十一，下单\n", encoding="utf-8")
+    assert parse.spoken_text("双十一下单", "zh") == "双十一，下单"
+
+
+def test_spoken_rules_must_be_phrase_to_text(tmp_path, monkeypatch):
+    rules = tmp_path / "zh_spoken.yaml"
+    rules.write_text("- 双十一\n", encoding="utf-8")
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    with pytest.raises(ValueError, match="zh_spoken.yaml"):
+        parse.spoken_text("双十一", "zh")
+
+
+def test_asr_check_ignores_title_marks_and_other_unspoken_punctuation():
+    """《原则》 is read as 原则; title marks and brackets must not count as misread characters."""
+    from vagent.qa.asr import error_rate
+
+    assert error_rate("达利欧在《原则》里提醒过：", "达利欧在原则里提醒过", "zh") == 0
+    assert error_rate("〈原则〉【重点】「注意」『引用』", "原则重点注意引用", "zh") == 0
+
+
+def test_asr_check_treats_words_that_sound_the_same_as_equal():
+    """他/她/它 and 的/地/得 sound identical; Whisper's choice between them is not a misreading."""
+    from vagent.qa.asr import error_rate
+
+    assert error_rate("小猫醒了，它慢慢地走到窗边。", "小猫醒了他慢慢的走到窗边", "zh") == 0
+    assert error_rate("她跑得很快", "他跑的很快", "zh") == 0
+    assert error_rate("它走到窗边", "我走到窗边", "zh") > 0       # a different word is still caught
+
+
+def test_asr_check_ignores_hyphens_and_digit_spelling_in_english():
+    """'first-order' heard as 'first order', or 'Two' written as '2', is the same speech, not a misreading."""
+    from vagent.qa.asr import error_rate
+
+    assert error_rate("Second-order effects show up later.", "Second order effects show up later.", "en") == 0
+    assert error_rate("Two: ask yourself.", "2. Ask yourself.", "en") == 0
+    assert error_rate("Spend-and-save deals", "Spend and save deals", "en") == 0
+    assert error_rate("Two cats", "Three cats", "en") > 0
+
+
+def test_spoken_text_reads_a_decimal_point_in_chinese():
+    # cv2:me read "3.2个比特币" as "三 二", dropping the point; digits after the point are said one by one
+    assert parse.spoken_text("亏掉了3.2个比特币", "zh") == "亏掉了三点二个比特币"
+    assert parse.spoken_text("涨了12.05%", "zh") == "涨了百分之十二点零五"
+    assert parse.spoken_text("版本 1.2.3 不是小数", "zh") == "版本 1.2.3 不是小数"
+    assert parse.spoken_text("lost 3.2 bitcoin", "en") == "lost 3.2 bitcoin"
+
+
+def test_a_respelling_does_not_break_a_year(tmp_path, monkeypatch):
+    # the rule "8年: 八年" turned "2018年" into "201八年", which the year rule no longer saw (heard "法巡18年")
+    rules = tmp_path / "zh_spoken.yaml"
+    rules.write_text("8年: 八年\n", encoding="utf-8")
+    monkeypatch.setattr(parse, "SPOKEN_FILE", rules)
+    assert parse.spoken_text("2018年12月", "zh") == "二零一八年十二月"
+    assert parse.spoken_text("坚持了8年", "zh") == "坚持了八年"

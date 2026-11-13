@@ -7,6 +7,7 @@ Reads one JSON request per line on stdin, writes one JSON reply per line on stdo
 Voices
   sft:<speaker>     CosyVoice-300M-SFT built-in speaker (e.g. 中文男)
   cv2:<name>        CosyVoice2-0.5B zero-shot, prompt audio prompts/<name>.wav + prompts/<name>.txt
+  cv2x:<name>       the same voice speaking another language than its prompt (cross-lingual: prompt text unused)
 """
 from __future__ import annotations
 
@@ -59,15 +60,18 @@ def model(kind: str):
 
 def synth(request: dict) -> dict:
     kind, _, name = request["voice"].partition(":")
-    engine = model(kind)
+    engine = model("sft" if kind == "sft" else "cv2")   # cv2 and cv2x share one loaded model
     speed = float(request.get("speed", 1.0))
     if kind == "sft":
         chunks = engine.inference_sft(request["text"], name, stream=False, speed=speed)
     else:
         prompt_dir = Path(__file__).resolve().parent / "prompts"
-        prompt_text = (prompt_dir / f"{name}.txt").read_text(encoding="utf-8").strip()
         prompt_wav = str(prompt_dir / f"{name}.wav")
-        chunks = engine.inference_zero_shot(request["text"], prompt_text, prompt_wav, stream=False, speed=speed)
+        if kind == "cv2x":
+            chunks = engine.inference_cross_lingual(request["text"], prompt_wav, stream=False, speed=speed)
+        else:
+            prompt_text = (prompt_dir / f"{name}.txt").read_text(encoding="utf-8").strip()
+            chunks = engine.inference_zero_shot(request["text"], prompt_text, prompt_wav, stream=False, speed=speed)
     audio = torch.cat([chunk["tts_speech"] for chunk in chunks], dim=1)
     torchaudio.save(request["out"], audio, engine.sample_rate)
     return {"ok": True, "sample_rate": engine.sample_rate, "seconds": audio.shape[1] / engine.sample_rate}

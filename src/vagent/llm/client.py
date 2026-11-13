@@ -2,7 +2,7 @@
 
 Every call has a pydantic model: the JSON schema is sent to the CLI for
 structured output, the reply is validated locally, and on failure the
-validation error is fed back for another attempt (config.llm.retries).
+rejected answer and the reasons are fed back for a corrected attempt (config.llm.retries).
 """
 from __future__ import annotations
 
@@ -61,17 +61,26 @@ def _call_cli(system: str, user: str, schema: dict, model: str, timeout: int) ->
     return result
 
 
+def _correction(rejected: dict, feedback: str) -> str:
+    """Retry prompt tail. With the rejected answer shown, the model corrects it in place; asked to start over,
+    it drafts a fresh answer that tends to bring new mistakes, so retries never converge."""
+    return ("\n\nYour previous answer (below) was rejected for these reasons:\n" + feedback +
+            "\n\nReturn that answer corrected: change only what these reasons require and keep everything "
+            "else exactly as it was.\n\nPrevious answer:\n" + json.dumps(rejected, ensure_ascii=False))
+
+
 def structured(model_cls: type[M], system: str, user: str, config: dict, log=None, validate=None) -> M:
     """Ask for JSON matching model_cls; `validate(obj)` may return extra error strings (semantic checks)."""
     settings = config["llm"]
     schema = model_cls.model_json_schema()
-    feedback = ""
+    feedback = ""  # set only after an answer arrived and was rejected; `rejected` then holds that answer
+    rejected: dict = {}
     last_error = ""
     for attempt in range(1, settings["retries"] + 1):
-        prompt = user if not feedback else (
-            user + "\n\nYour previous answer was rejected for these reasons; fix all of them:\n" + feedback)
+        prompt = user if not feedback else user + _correction(rejected, feedback)
         try:
             raw = _call_cli(system, prompt, schema, settings["model"], settings["timeout_s"])
+            rejected = raw
             obj = model_cls.model_validate(raw)
             problems = list(validate(obj)) if validate else []
             if not problems:

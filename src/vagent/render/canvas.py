@@ -184,6 +184,36 @@ class Canvas:
             self.records.append(TextRecord(" / ".join(fitted.lines), box, font, fitted.size))
         return box
 
+    def text_block_kinetic(self, fitted: Fitted, font: str, x: float, y: float, color, t: float, t0: float,
+                           align: str = "center", step: float = 0.045, dur: float = 0.38, rise: float = 0.32,
+                           under=None, record: bool = True) -> Box:
+        """Like text_block, but each glyph (Chinese) or word (Latin) pops up in turn from t0.
+
+        Glyph positions come from measuring each line's prefix, so the settled text is laid out exactly
+        like text_block's.
+        """
+        f = _font(font, int(fitted.size * S))
+        top, order = y, 0
+        for line, w in zip(fitted.lines, fitted.widths):
+            left = x - w / 2 if align == "center" else x
+            units = list(line) if re.search(r"[一-鿿]", line) else re.findall(r"\S+\s*", line)
+            prefix = ""
+            for unit in units:
+                k = appear(t, t0 + order * step, dur)
+                order += 1
+                if k > 0.004:
+                    dx = self.measure(prefix, font, fitted.size) if prefix else 0.0
+                    dy = (1 - k) * fitted.size * rise
+                    self.d.text(((left + dx) * S, (top + fitted.line_height / 2 + dy) * S), unit, font=f,
+                                fill=self.c(color, k, under), anchor="lm")
+                prefix += unit
+            top += fitted.line_height
+        width = fitted.width
+        box = Box(x - width / 2 if align == "center" else x, y, width, fitted.height)
+        if record and t >= t0:
+            self.records.append(TextRecord(" / ".join(fitted.lines), box, font, fitted.size))
+        return box
+
     def text(self, x, y, s, font, size, color, anchor="mm", alpha=1.0, under=None, record=True):
         if alpha <= 0.004 or not s:
             return

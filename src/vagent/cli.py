@@ -1,4 +1,4 @@
-"""vagent command line: run | check | watch | audition | doctor | demo."""
+"""vagent command line: run | check | watch | audition | doctor | demo | youtube."""
 from __future__ import annotations
 
 import argparse
@@ -67,6 +67,9 @@ def main(argv=None) -> int:
     dem = sub.add_parser("demo", help="render the component gallery reel and safe-area images")
     dem.add_argument("--out", default="output/phase2_demo/gallery")
     dem.add_argument("--narrated", help="a phase-1 run directory: render its first sentences with real narration")
+    yt = sub.add_parser("youtube", help="upload a story episode's English video to your YouTube channel")
+    yt.add_argument("folder")
+    yt.add_argument("--privacy", choices=["private", "unlisted", "public"], default="private")
     args = parser.parse_args(argv)
     config = configmod.load(overrides(args))
 
@@ -86,6 +89,16 @@ def main(argv=None) -> int:
             print(demo.gallery_reel(lang, out / f"gallery_{lang}.mp4", config, RunLog()))
             print(demo.safe_area_overlay(lang, out / f"safe_area_{lang}.png", config))
         return 0
+    if args.command == "youtube":
+        from .publish import youtube
+
+        try:
+            out = youtube.upload(Path(args.folder), youtube.service(configmod.PROJECT / "config"), args.privacy)
+        except youtube.PublishError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f"{out['url']} ({out['privacy']}); cover: {out['thumbnail'] or 'no cover file'}")
+        return 0 if out["thumbnail"] in ("set", None) else 1
     if args.command == "check":
         from .qa import report
 

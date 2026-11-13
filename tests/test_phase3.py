@@ -135,3 +135,83 @@ def test_localize_keeps_original_when_only_punctuation_differs(tmp_path, monkeyp
     assert [s.text for s in zh.sentences[:2]] == ["投资收益，应该来自价值创造", "现在是不是该买入？"]
     assert zh.sentences[2].text == "短期价格，真的很难预测。"          # a real edit, punctuation normalised
     assert [c["id"] for c in changes] == [3]
+
+
+def test_bars_need_values_stated_in_the_script():
+    # schematic bar heights read as data the script never gave
+    scenes = good_scenes()
+    scenes[2] = {"id": "s03", "sentence_ids": [4], "component": "bars",
+                 "params_zh": {"items": [{"label": "朋友来访"}, {"label": "我每天住"}]},
+                 "params_en": {"items": [{"label": "Friend visits"}, {"label": "I live there"}]}}
+    assert any("bars need a value" in p for p in problems(board(scenes), ZH, EN, TIMES))
+
+
+def test_chinese_visual_text_uses_the_chinese_ellipsis():
+    scenes = good_scenes()
+    scenes[2]["params_zh"] = {"word": "看到我住这里..."}
+    assert any("……" in p for p in problems(board(scenes), ZH, EN, TIMES))
+
+
+def test_icons_must_come_from_the_icon_set():
+    scenes = good_scenes()
+    scenes[2]["params_zh"]["icon"] = "book"
+    scenes[2]["params_en"]["icon"] = "book"
+    assert problems(board(scenes), ZH, EN, TIMES) == []
+    scenes[2]["params_zh"]["icon"] = "dragon"
+    assert any("unknown icon 'dragon'" in p for p in problems(board(scenes), ZH, EN, TIMES))
+    scenes = good_scenes()
+    scenes[2] = {"id": "s03", "sentence_ids": [4], "component": "checklist",
+                 "params_zh": {"items": ["读一页", "走十分钟"], "icons": ["book", "walk", "run"]},
+                 "params_en": {"items": ["Read a page", "Walk ten minutes"], "icons": ["book", "walk"]}}
+    assert any("more icons than" in p for p in problems(board(scenes), ZH, EN, TIMES))
+    # a cycle lists its entries as `steps`: icons are counted against those (this once rejected every cycle)
+    scenes = good_scenes()
+    scenes[2] = {"id": "s03", "sentence_ids": [4], "component": "cycle",
+                 "params_zh": {"steps": ["做一点", "看反馈", "调一调"], "icons": ["pencil", "eye", "adjustments"]},
+                 "params_en": {"steps": ["Do", "Check", "Adjust"], "icons": ["pencil", "eye", "adjustments"]}}
+    assert problems(board(scenes), ZH, EN, TIMES) == []
+    scenes[2]["params_zh"]["icons"].append("book")
+    assert any("more icons than" in p for p in problems(board(scenes), ZH, EN, TIMES))
+    scenes = good_scenes()  # an icon name is not on-screen text: its digits are not data
+    scenes[2]["params_zh"]["icon"] = scenes[2]["params_en"]["icon"] = "book-2"
+    assert problems(board(scenes), ZH, EN, TIMES) == []
+
+
+def test_a_rejected_answer_is_sent_back_for_correction(monkeypatch):
+    """A retry must show the model its own rejected answer, so it fixes the flagged parts instead of
+    drafting a fresh answer that brings new mistakes (seen: storyboards never converging)."""
+    from pydantic import BaseModel
+
+    from vagent.llm import client
+
+    class Answer(BaseModel):
+        words: list[str]
+
+    prompts, replies = [], iter([{"words": ["keep-me", "bad"]}, {"words": ["keep-me", "good"]}])
+
+    def fake_cli(system, user, schema, model, timeout):
+        prompts.append(user)
+        return next(replies)
+
+    monkeypatch.setattr(client, "_call_cli", fake_cli)
+    config = {"llm": {"retries": 3, "model": "m", "timeout_s": 1}}
+    got = client.structured(Answer, "sys", "task", config,
+                            validate=lambda a: ["word 'bad' is not allowed"] if "bad" in a.words else [])
+    assert got.words == ["keep-me", "good"]
+    assert len(prompts) == 2
+    assert '"keep-me"' in prompts[1] and "word 'bad' is not allowed" in prompts[1]
+
+
+def test_an_answer_failing_the_schema_is_also_sent_back(monkeypatch):
+    from pydantic import BaseModel, Field
+
+    from vagent.llm import client
+
+    class Answer(BaseModel):
+        words: list[str] = Field(min_length=2)
+
+    prompts, replies = [], iter([{"words": ["only-one"]}, {"words": ["only-one", "two"]}])
+    monkeypatch.setattr(client, "_call_cli", lambda s, u, *a: prompts.append(u) or next(replies))
+    config = {"llm": {"retries": 3, "model": "m", "timeout_s": 1}}
+    assert client.structured(Answer, "sys", "task", config).words == ["only-one", "two"]
+    assert '"only-one"' in prompts[1]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..script.parse import spoken_text
 from ..tts.base import SR
 from .asr import error_rate, mismatches, transcribe
 
@@ -14,11 +15,12 @@ def check(audio: np.ndarray, timeline: dict, lang: str) -> dict:
     for sentence in timeline["sentences"]:
         a, b = int(sentence["clip_start"] * SR), int(sentence["clip_end"] * SR)
         heard = transcribe(audio[a:b], SR, lang)
-        rate = error_rate(sentence["text"], heard, lang)
+        meant = spoken_text(sentence["text"], lang)  # compare with what the voice was asked to say
+        rate = error_rate(meant, heard, lang)
         row = {"id": sentence["id"], "text": sentence["text"], "heard": heard, "error_rate": round(rate, 3)}
         rows.append(row)
         if rate > FLAG[lang]:
-            flagged.append({**row, "diff": mismatches(sentence["text"], heard, lang)[:4]})
+            flagged.append({**row, "diff": mismatches(meant, heard, lang)[:4]})
     total = sum(len(r["text"]) for r in rows) or 1
     weighted = sum(r["error_rate"] * len(r["text"]) for r in rows) / total
     return {"lang": lang, "overall_error_rate": round(weighted, 3), "flagged": flagged, "sentences": rows}

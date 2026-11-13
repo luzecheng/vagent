@@ -119,12 +119,12 @@ def _run(text: str, config: dict, out: Path, log: RunLog, stage: str) -> int:
 
     report = ["# 配音回听（Whisper）", ""]
     from . import cache as cachemod
-    from .qa.asr import ASR_MODEL
+    from .qa.asr import ASR_MODEL, COMPARE_REV
 
     asr_store = cachemod.Cache(config["paths"]["cache"], "asr")
     asr_results = {}
     for lang, n in results.items():
-        digest = cachemod.key(ASR_MODEL, lang, hashlib.sha256(n.audio.tobytes()).hexdigest(),
+        digest = cachemod.key(ASR_MODEL, COMPARE_REV, lang, hashlib.sha256(n.audio.tobytes()).hexdigest(),
                               [(x["id"], x["text"]) for x in n.timeline["sentences"]])
         result = asr_store.get_json(digest)
         if result is None:

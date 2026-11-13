@@ -1,0 +1,22 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+A single futuristic humanoid robot character, standing straight in a neutral pose, front view, arms relaxed at its sides, feet slightly apart.
+
+Character design:
+- A sleek futuristic humanoid robot with friendly, slightly stylized proportions.
+- Head: a large smooth helmet-like head, slightly oval, about one quarter of the total body height. No face, no eyes, no mouth. A thin dark horizontal visor band across the front, with a faint ice-blue glowing line inside it.
+- Body: segmented armor plates on the chest, upper arms, forearms, thighs and shins, with clean seams between plates.
+- Visible spherical joints at the shoulders, elbows, wrists, hips and knees. Each joint has a soft ice-blue glow.
+- A small round ice-blue glowing core in the center of the chest.
+- Simple mechanical hands with five fingers, small rounded feet.
+- Line style: the armor plates are drawn with fine, precise, flowing white contour lines that follow the 3D surface, like a wireframe model. Inside the joints and the torso gaps, the lines become dense, tangled white scribble lines, like glowing energy threads.
+- Lines are brighter along the outline, darker toward the center, creating 3D volume.
+- A soft white glow around the outline.
+- Colors: white lines on black, with ice-blue as the only accent color, used only on the joints, chest core and visor line.
+
+Composition:
+- Pure solid black background, no ground, no floor, no shadow, no other objects.
+- Full body visible, figure centered horizontally, occupying about 80% of the image height.
+- Feet positioned near the bottom with clear margin below.
+- Landscape 16:9 image.
+- White and ice-blue only, on black. No other colors, no text, no watermark.

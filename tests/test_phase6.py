@@ -144,3 +144,13 @@ def test_doctor_flags_espeak_data_paths_too_long_for_espeak_ng():
 
     assert espeak_path_ok("/Users/someone/vagent/.venv/lib/python3.12/site-packages/espeakng_loader/espeak-ng-data")
     assert not espeak_path_ok("/" + "x" * 160 + "/espeak-ng-data")
+
+
+def test_faster_whisper_is_a_core_dependency():
+    """Every run transcribes the narration back, and CosyVoice timings come from Whisper alignment."""
+    import tomllib
+    from pathlib import Path
+
+    project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert "faster-whisper" in project["dependencies"]
+    assert "asr" not in project.get("optional-dependencies", {})

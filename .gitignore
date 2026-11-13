@@ -11,6 +11,22 @@ __pycache__/
 .DS_Store
 # personal: this machine's settings, your own scripts, backups
 config/local.yaml
+config/zh_spoken.yaml
+config/youtube_client_secret.json
+config/youtube_token.json
 scripts/
 *.bak_*
 engines/*.log
+# Voice prompts are personal recordings; only the neutral sample ships with the repo.
+engines/prompts/*
+!engines/prompts/male_ref.wav
+!engines/prompts/male_ref.txt
+# Story episodes hold the user's own scripts and renders: never published.
+story/episodes/
+
+# robot tests: generated drawings, clips and review images stay local
+tests/robot-*/frames/
+tests/robot-*/clips/
+tests/robot-*/review/**/*.png
+tests/robot-*/review/*.json
+tests/robot-*/review/*抽帧*/

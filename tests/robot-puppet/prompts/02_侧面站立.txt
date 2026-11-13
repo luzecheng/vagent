@@ -1,0 +1,16 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+The attached reference image is the character sheet of a robot (front view). Draw THE SAME ROBOT in a strict SIDE VIEW (profile), facing right, standing still in a relaxed neutral pose.
+
+Same character as the reference:
+- Same line style everywhere: fine white glowing contour lines that follow the 3D surface, tangled white scribble lines in the joints and gaps, a soft white glow on the outlines. The armor reads as white glowing lines on black, exactly like the reference, NOT as dark solid shapes.
+- Same body thickness as the reference: a straight, boxy torso; the waist is not narrower than in the reference; no protruding chest; arms and legs as thick as in the reference. Not slimmer, not curvier, not more muscular.
+- Same large round helmet (about one quarter of the body height); in profile the thin ice-blue visor line is visible as a short glowing line on the front (right side) of the helmet.
+- Ice-blue glowing spherical joints at shoulder, elbow, wrist, hip, knee and ankle, and the ice-blue chest core visible at the front edge of the chest.
+
+Pose and proportions:
+- Both arms hang naturally at the sides. The fingertips end at the MIDDLE OF THE THIGH, never lower than the middle of the thigh.
+- The far arm and the far leg are partly visible behind the near ones; they are drawn with the same white glowing lines, only slightly dimmer, never as dark shapes.
+- Feet flat on an invisible ground line.
+
+Composition: pure solid black background, no ground, no shadow, no other objects, no text. The robot is centered horizontally, occupying about 80% of the image height, feet near the bottom with a clear margin. Landscape 16:9. White and ice-blue only.

@@ -1,0 +1,424 @@
+"""Robot story film: stations (props placed along the road) and the robot's footing on them."""
+import types
+
+import numpy as np
+from PIL import Image
+
+from robotfilm.robot_story import Film
+from story.render import FPS
+
+
+def _props_sheet(path):
+    """Nine plain white blocks on black, 3 x 3, the sixth one wide like a staircase."""
+    a = np.zeros((900, 1600, 3), np.uint8)
+    for k in range(9):
+        r, c = divmod(k, 3)
+        w = 360 if k == 5 else 160
+        x0, y0 = 120 + c * 520, 80 + r * 300
+        a[y0:y0 + 160, x0:x0 + w] = 255
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(a).save(path)
+
+
+def _film(tmp_path, beats):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots, t = [], 0.0
+    for i, d in enumerate((9.0, 6.0), 1):
+        shots.append({"id": i, "start": t, "end": t + d, "voice_end": t + d - 0.3})
+        t += d
+    mod = types.SimpleNamespace(BEATS=beats, MACHINE=None,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": t, "shots": shots}, 1080, 1920, mod, "zh")
+
+
+def test_the_robot_never_climbs_stairs_that_are_not_shown(tmp_path):
+    # up the stairs in shot 1, down the far side in shot 2: the robot gets to the top while shot 1 is still on
+    film = _film(tmp_path, {
+        1: dict(walk=99, stations=[("stairs", 0, 250, {"left_at": 0.6, "climb": True, "key": "up"})]),
+        2: dict(walk=99, stations=[("stairs", 0, 250, {"after": "up", "climb": True, "flip": True, "overlap": 80})]),
+    })
+    on_down = 0
+    for f in range(int(film.tl["duration"] * FPS)):
+        t = f / FPS
+        for st in film.stations:
+            if not st.get("climb"):
+                continue
+            left = st["x"] - st["w"] / 2 - film.trav(t)
+            if 0 <= (film.hip_x - left) / st["w"] <= 1:          # the robot is standing on this one
+                on_down += st.get("flip", False) and t < film.shots[1]["start"]
+                assert st["t_in"] <= t <= st["t_out"], (t, st["name"], st["t_in"], st["t_out"])
+    assert on_down, "the test should have the robot on the down stairs during shot 1"
+
+
+def _talky_film(tmp_path):
+    """Shot 1 talks, 2 walks in then talks, 3 talks, 4 is a quote shot."""
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots, t = [], 0.0
+    for i, d in enumerate((5.0, 6.0, 4.0, 5.0), 1):
+        s = {"id": i, "start": t, "end": t + d, "voice_end": t + d - 0.3}
+        if i == 4:
+            s["quote"] = "金句"
+        shots.append(s)
+        t += d
+    mod = types.SimpleNamespace(BEATS={2: dict(walk=1.5)}, MACHINE=None,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": t, "shots": shots}, 1080, 1920, mod, "zh")
+
+
+def test_camera_moves_smoothly_and_never_shows_past_the_frame(tmp_path):
+    film = _talky_film(tmp_path)
+    zs = [film.zoom(f / FPS) for f in range(int(film.tl["duration"] * FPS))]
+    assert min(zs) >= 1.0
+    assert max(zs) > 1.04, "the camera should push in while the robot talks"
+    assert max(abs(b / a - 1) for a, b in zip(zs, zs[1:])) < 0.03, "no jumps at shot changes"
+    heads = [_on_screen(film, f / FPS, film.hip_x, film.ground - film.height) for f in range(len(zs))]
+    assert max(abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(heads, heads[1:])) < 40 * film.u, "the robot glides"
+
+
+def test_camera_is_closest_on_quotes(tmp_path):
+    film = _talky_film(tmp_path)
+    s4 = film.shots[3]
+    talk_peaks = [film.zoom(s["end"] - 1e-3) for s in film.shots[:3]]
+    assert film.zoom(s4["end"] - 1e-3) > max(talk_peaks)
+
+
+def test_sky_words_are_bigger_on_a_phone(tmp_path):
+    from robotfilm.fx import label_scale
+    film = _talky_film(tmp_path)
+    wide = types.SimpleNamespace(portrait=False)
+    assert label_scale(film) >= 1.5 and 1.2 <= label_scale(wide) < label_scale(film)
+
+
+def _frame(film, t):
+    import cairo
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, film.W, film.H)
+    film.draw(cairo.Context(surf), t)
+    surf.flush()
+    return np.ndarray((film.H, film.W, 4), np.uint8, surf.get_data()).astype(int)[..., :3].sum(2)
+
+
+def _on_screen(film, t, x, y):
+    """Where a point of the world (unzoomed frame coordinates) is on screen with the camera at t."""
+    z, ax, ay = film.camera(t)
+    return int(ax + x * z), int(ay + y * z)
+
+
+def _lit_film(tmp_path, glow):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots = [{"id": 1, "start": 0.0, "end": 6.0, "voice_end": 5.7, "subs": []}]
+    opts = {"glow": (1.0, 0.6, 0.25)} if glow else {}
+    mod = types.SimpleNamespace(BEATS={1: dict(stations=[("a", 0.7, 150, opts)])}, MACHINE=None, SOLID_PROPS=True,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": 6.0, "shots": shots}, 1080, 1920, mod, "zh", "color")
+
+
+def test_robot_and_props_cast_soft_shadows(tmp_path):
+    film = _lit_film(tmp_path, glow=False)
+    img = _frame(film, 3.0)
+    x, y = _on_screen(film, 3.0, film.hip_x + film.height * 0.1, film.ground + 5 * film.u)   # beside the feet
+    ground = img[y, int(film.W * 0.05)]
+    assert img[y, x] < ground - 6, "shadow under the robot's feet"
+
+
+def test_glowing_props_light_the_ground_around_them(tmp_path):
+    lit, plain = _frame(_lit_film(tmp_path, True), 3.0), _frame(_lit_film(tmp_path / "b", False), 3.0)
+    film = _lit_film(tmp_path, True)
+    x, y = _on_screen(film, 3.0, film.W * 0.7 + 110 * film.u, film.ground + 14 * film.u)   # beside the prop
+    assert lit[y, x] > plain[y, x] + 10
+
+
+def test_street_lamps_light_a_pool_on_the_ground():
+    from robotfilm.world import World
+    import cairo
+
+    def render(pool):
+        w = World(1080, 1920, palette="color")
+        w.c = {**w.c, "lamp_pool": pool}
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+        w.draw(cairo.Context(surf), 0.0, 0.0)
+        surf.flush()
+        return w, np.ndarray((1920, 1080, 4), np.uint8, surf.get_data()).astype(int)[..., :3].sum(2)
+
+    w, lit = render(0.16)
+    _, dark = render(0.0)
+    y = int(w.horizon + 8 * w.u)
+    lamp_x = [x for wx in w.props.lamps for x in w.props._on_screen(wx, 0.0, 1080, 100) if 100 < x < 900]
+    assert lamp_x, "a lamp should be on screen at travel 0"
+    head = int(lamp_x[0] + 34 * w.s)
+    assert lit[y, head] > dark[y, head] + 8
+    assert World(1080, 1920, palette="color").c.get("lamp_pool", 0) > 0, "the colour night has lamp pools"
+
+
+def _prop_film(tmp_path, opts=None, beat=None):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots = [{"id": 1, "start": 0.0, "end": 6.0, "voice_end": 5.7, "subs": []}]
+    b = {"stations": [("a", 0.7, 150, opts or {})], **(beat or {})}
+    mod = types.SimpleNamespace(BEATS={1: b}, MACHINE=None, SOLID_PROPS=True,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": 6.0, "shots": shots}, 1080, 1920, mod, "zh", "color")
+
+
+def test_swaying_props_move_in_the_wind(tmp_path):
+    still = _prop_film(tmp_path, {})
+    sway = _prop_film(tmp_path / "s", {"sway": True})
+    x0, y0 = _on_screen(sway, 3.0, sway.W * 0.7 - 160 * sway.u, sway.ground - 150 * sway.u)
+    x1, y1 = _on_screen(sway, 3.0, sway.W * 0.7 + 160 * sway.u, sway.ground - 60 * sway.u)
+    box = lambda img: img[y0:y1, x0:x1]
+    # the same moment with and without wind: everything else in the frame is identical
+    tilt = lambda t: np.abs(box(_frame(sway, t)) - box(_frame(still, t))).sum()
+    a, b = tilt(3.0), tilt(4.1)
+    assert a > 1000 and b > 1000 and a != b, "it leans, and by a different amount as time goes on"
+
+
+def test_smoke_rises_above_a_prop(tmp_path):
+    plain, smoky = _prop_film(tmp_path, {}), _prop_film(tmp_path / "s", {"smoke": True})
+    x0, y0 = _on_screen(smoky, 3.0, smoky.W * 0.7 - 80 * smoky.u, smoky.ground - 420 * smoky.u)
+    x1, y1 = _on_screen(smoky, 3.0, smoky.W * 0.7 + 80 * smoky.u, smoky.ground - 170 * smoky.u)
+    assert _frame(smoky, 3.0)[y0:y1, x0:x1].sum() > _frame(plain, 3.0)[y0:y1, x0:x1].sum()
+
+
+def test_the_robot_can_hold_a_prop(tmp_path):
+    plain = _prop_film(tmp_path)
+    holding = _prop_film(tmp_path / "h", beat={"hold": ("b", 60)})
+    from robotfilm.fx import joints
+    hx, hy = plain.hand(joints(plain, plain.pose(3.0)))
+    x0, y0 = _on_screen(plain, 3.0, hx - 50 * plain.u, hy - 80 * plain.u)
+    x1, y1 = _on_screen(plain, 3.0, hx + 50 * plain.u, hy + 20 * plain.u)
+    assert np.abs(_frame(holding, 3.0)[y0:y1, x0:x1] - _frame(plain, 3.0)[y0:y1, x0:x1]).sum() > 1000
+
+
+def test_fireflies_drift_over_the_grass():
+    from robotfilm.world import World
+    import cairo
+
+    def render(n, t):
+        w = World(1080, 1920, palette="color")
+        w.c = {**w.c, "fireflies": n}
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+        w.draw(cairo.Context(surf), 0.0, t)
+        surf.flush()
+        return w, np.ndarray((1920, 1080, 4), np.uint8, surf.get_data()).astype(int)[..., :3].sum(2)
+
+    w, on = render(40, 2.0)
+    _, off = render(0, 2.0)
+    band = slice(int(w.horizon - 260 * w.u), int(w.horizon))
+    assert on[band].sum() > off[band].sum()
+    assert World(1080, 1920, palette="color").c.get("fireflies", 0) > 0, "the colour night has fireflies"
+
+
+
+def test_the_robot_stands_on_the_left_third_line():
+    import robotfilm.robot_story as rs
+    assert rs.ROBOT_X == 0.38
+
+
+def test_shot_sizes_change_and_quotes_get_a_close_up(tmp_path):
+    film = _talky_film(tmp_path)
+    size = [film.camera(s["end"] - 1e-3)[0] for s in film.shots]
+    assert size[1] < 1.2, "a shot that arrives somewhere ends wide enough to show the place"
+    assert size[3] >= 2.0, "the quote shot is a close-up"
+    assert any(1.4 <= z < 2.0 for z in size), "there are half-body shots"
+    names = [film.shot_size(i) for i in range(len(film.shots))]
+    assert all(not (a == b == c) for a, b, c in zip(names, names[1:], names[2:])), names
+
+
+def test_sky_words_stay_put_while_the_camera_moves():
+    import cairo
+    from robotfilm.fx import label
+    film = types.SimpleNamespace(portrait=True, u=1.0)
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+    cr = cairo.Context(surf)
+    cr.translate(540, 1000)
+    cr.scale(2.2, 2.2)                     # a close-up
+    cr.translate(-540, -1000)
+    film.cr = cr
+    label(film, "测试", 540, 300, 1.0, 60)
+    surf.flush()
+    img = np.ndarray((1920, 1080, 4), np.uint8, surf.get_data())[..., 3]
+    ys, xs = np.nonzero(img > 128)
+    assert abs(ys.mean() - 300) < 40 and abs(xs.mean() - 540) < 40, (ys.mean(), xs.mean())
+
+
+def _shot_film(tmp_path, beat, d=8.0, world="color"):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots = [{"id": 1, "start": 0.0, "end": 4.0, "voice_end": 3.7, "subs": []},
+             {"id": 2, "start": 4.0, "end": 4.0 + d, "voice_end": 3.7 + d, "subs": []}]
+    mod = types.SimpleNamespace(BEATS={2: beat}, MACHINE=None, SOLID_PROPS=True,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": 4.0 + d, "shots": shots}, 1080, 1920, mod, "zh", world)
+
+
+def test_the_robot_walks_into_a_still_frame(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=3.5, enter=True))
+    t0, t1 = 4.0 + 1 / FPS, 4.0 + 3.5
+    assert film.view_trav(t0) == film.view_trav(t1), "the camera holds still while it comes in"
+    assert film.robot_x(t0) < film.hip_x - 0.3 * film.W, "it starts near the left edge"
+    assert abs(film.robot_x(t1) - film.hip_x) < 2, "and stops on its mark"
+
+
+def test_the_robot_walks_out_of_a_still_frame(tmp_path):
+    film = _shot_film(tmp_path, dict(leave=3.0))
+    t0, t1 = 12.0 - 3.0 + 1 / FPS, 12.0 - 1 / FPS
+    assert film.view_trav(t0) == film.view_trav(t1)
+    assert film.robot_x(t1) > film.hip_x + 0.25 * film.W, "it walks off to the right"
+    assert film.robot_x(5.0) == film.hip_x
+
+
+def test_blurred_grass_passes_in_front(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=8.0))
+    on = [film.foreground_cover(4.0 + k * 0.25) for k in range(32)]
+    assert max(on) > 0 and min(on) == 0, "now and then something passes in front, not all the time"
+    off = _shot_film(tmp_path / "b", dict(walk=8.0), world="robot")
+    assert max(off.foreground_cover(4.0 + k * 0.25) for k in range(32)) == 0, "only in the colour night"
+
+
+def test_leaves_drift_across_a_still_shot(tmp_path):
+    still = _shot_film(tmp_path, {})
+    leaves = _shot_film(tmp_path / "l", dict(drift="leaves"))
+    band = slice(int(still.H * 0.2), int(still.ground))
+    diff = np.abs(_frame(leaves, 7.0)[band] - _frame(still, 7.0)[band]).sum()
+    assert diff > 5000
+
+
+def test_shot_list_flags_still_shots_and_repeated_sizes(tmp_path):
+    from robotfilm.shotlist import rows, warnings
+    film = _shot_film(tmp_path, {})
+    r = rows(film)
+    assert [x["id"] for x in r] == [1, 2] and {"size", "camera", "moves"} <= set(r[0])
+    still = {"id": 9, "size": "full", "camera": "hold", "moves": []}
+    w = warnings([dict(still, id=k) for k in (1, 2, 3)])
+    assert any("1–3" in x or "1-3" in x for x in w), w
+    assert any("9" in x or "1" in x for x in w if "nothing moves" in x), w
+
+
+def test_the_film_opens_with_the_robot_walking_in(tmp_path):
+    film = _shot_film(tmp_path, {})                  # shot 1 has no walk of its own
+    assert film.robot_x(0.1) < film.hip_x - 0.15 * film.W, "moving from the very first frames"
+    assert abs(film.robot_x(3.2) - film.hip_x) < 2, "on its mark after about three seconds"
+    assert film.view_trav(0.1) == film.view_trav(2.9), "the camera waits on the opening place"
+    still = _shot_film(tmp_path / "s", {})
+    still.beats[1] = {"still_open": True}
+    still._plan()
+    assert still.robot_x(0.1) == still.hip_x, "an episode can still open on a standing robot"
+
+
+def test_shot_list_flags_a_still_opening():
+    from robotfilm.shotlist import warnings
+    rs = [{"id": 1, "size": "full", "camera": "push in", "moves": ["camera"]},
+          {"id": 2, "size": "medium", "camera": "follow", "moves": ["walks"]}]
+    assert any("opening" in x for x in warnings(rs))
+
+
+
+def test_the_camera_never_zooms_fast_enough_to_make_you_dizzy(tmp_path):
+    import math
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots, t = [], 0.0                      # short talk shots, a quote, then a quick walk: the hard cases
+    for i, (d, q) in enumerate(((5.0, 0), (3.0, 0), (3.0, 1), (6.0, 0), (2.6, 0), (4.0, 0)), 1):
+        shots.append({"id": i, "start": t, "end": t + d, "voice_end": t + d - 0.3, "subs": [], **({"quote": "q"} if q else {})})
+        t += d
+    mod = types.SimpleNamespace(BEATS={4: dict(walk=1.2)}, MACHINE=None,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    film = Film(tmp_path, {"duration": t, "shots": shots}, 1080, 1920, mod, "zh")
+    zs = [film.zoom(f / FPS) for f in range(int(film.tl["duration"] * FPS))]
+    fastest = max(abs(math.log(b / a)) for a, b in zip(zs, zs[1:])) * FPS
+    assert fastest < math.log(1.25), f"at most 25 % per second, got {math.exp(fastest) - 1:.0%}"
+
+
+def test_far_things_barely_move_when_the_camera_pushes_in():
+    from robotfilm.world import layer_camera
+    cam = (2.0, -540.0, -900.0)                      # a close-up around (540, 900)
+    sky, hills, ground = (layer_camera(cam, d) for d in (0.1, 0.5, 1.0))
+    assert sky[0] < 1.15 and 1.3 < hills[0] < 1.7 and ground == cam
+    assert layer_camera((1.0, 0.0, 0.0), 0.3) == (1.0, 0.0, 0.0)
+    fx, fy = 540.0, 900.0                            # the point the camera pushes in on stays put in every layer
+    for z, ax, ay in (sky, hills, ground):
+        assert abs(ax + z * fx - fx) < 1e-6 and abs(ay + z * fy - fy) < 1e-6
+
+
+def test_foreground_grass_only_comes_and_goes_at_the_frame_edges(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=8.0))
+    W = film.W
+    prev = []
+    seen = 0
+    for f in range(int(film.tl["duration"] * FPS) + 1):
+        now = film.foreground_clumps(f / FPS)            # [(left x, width)] of the clumps in frame
+        assert all(film.foreground_cover(f / FPS) in (0.0, 1.0) for _ in [0]), "never fades in or out"
+        if len(now) > len(prev):                         # one came in: from the right edge
+            assert now[-1][0] > W - 0.2 * W, now
+        if len(now) < len(prev):                         # one went out: past the left edge
+            x, w = prev[0]
+            assert x + w < 0.2 * W, prev
+        seen += bool(now)
+        prev = now
+    assert seen, "a long walk should have grass pass by"
+
+
+def test_no_grass_on_short_walks(tmp_path):
+    film = _shot_film(tmp_path, dict(walk=1.2))
+    assert not any(film.foreground_clumps(f / FPS) for f in range(int(film.tl["duration"] * FPS)))
+
+
+def test_robot_films_show_only_subtitles_and_the_title_card(tmp_path):
+    import cairo
+    from robotfilm.fx import label
+    film = _talky_film(tmp_path)
+    assert not film.sky_words and not film.show_quotes
+    assert film.show_cover, "the opening title card stays"
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1080, 1920)
+    film.cr = cairo.Context(surf)
+    label(film, "不要的字", 540, 300, 1.0, 60)
+    surf.flush()
+    assert np.ndarray((1920, 1080, 4), np.uint8, surf.get_data())[..., 3].max() == 0, "no sky words"
+    on = _talky_film(tmp_path / "on")
+    on.ep.SKY_WORDS = True
+    assert Film(tmp_path / "on", on.tl, 1080, 1920, on.ep, "zh").sky_words, "an episode can still ask for them"
+
+
+def _angle_film(tmp_path, angle):
+    _props_sheet(tmp_path / "robot2/frames/道具图_v1.png")
+    shots = [{"id": 1, "start": 0.0, "end": 5.0, "voice_end": 4.7, "subs": []},
+             {"id": 2, "start": 5.0, "end": 10.0, "voice_end": 9.7, "subs": []}]
+    mod = types.SimpleNamespace(BEATS={2: dict(angle=angle)} if angle else {}, MACHINE=None, SOLID_PROPS=True,
+                                PROPS=["a", "b", "c", "d", "e", "stairs", "g", "h", "i"])
+    return Film(tmp_path, {"duration": 10.0, "shots": shots}, 1080, 1920, mod, "zh", "color")
+
+
+def test_angle_drawings_are_all_there():
+    from robotfilm.robot_story import ANGLES, Angles
+    a = Angles(ANGLES)
+    assert set(a.sprites) == {"back", "three_quarter", "low", "high", "over_shoulder"}
+
+
+def test_an_angle_shot_shows_the_robot_from_that_angle(tmp_path):
+    side, back = _angle_film(tmp_path, None), _angle_film(tmp_path / "b", "back")
+    x0, x1 = int(side.hip_x - side.height * 0.4), int(side.hip_x + side.height * 0.4)
+    y0, y1 = int(side.ground - side.height * 1.3), int(side.ground + 10)
+    region = lambda f: _frame(f, 7.5)[y0:y1, x0:x1]
+    assert np.abs(region(back) - region(side)).sum() > 50000
+    assert _angle_film(tmp_path / "o", "over_shoulder").shot_size(1) == "full", "over the shoulder shows the place"
+
+
+def test_low_and_high_angles_tilt_the_camera(tmp_path):
+    low, high, flat = (_angle_film(tmp_path / n, n) for n in ("low", "high", "back"))
+    assert low.tilt(7.5) > 0.05 * low.H, "looking up: the horizon drops, more sky"
+    assert high.tilt(7.5) < -0.05 * high.H, "looking down: the horizon rises, more ground"
+    assert flat.tilt(7.5) == 0 and low.tilt(2.0) == 0
+
+
+def test_shot_list_keeps_angle_changes_rare():
+    from robotfilm.shotlist import warnings
+    rs = [{"id": k, "size": ("full", "medium")[k % 2], "camera": "push in", "moves": ["walks"],
+           "angle": "back" if k in (2, 4, 6) else "side"} for k in range(1, 9)]
+    assert any("angle" in x for x in warnings(rs)), "three angle changes are too many"
+    rs[5]["angle"] = "side"
+    assert not any("angle" in x for x in warnings(rs)), "two are fine"
+
+
+def test_angle_changes_dissolve_instead_of_cutting(tmp_path):
+    film = _angle_film(tmp_path, "low")
+    ks = [film.angle_mix(f / FPS)[1] for f in range(int(film.tl["duration"] * FPS))]
+    assert max(ks) == 1.0 and ks[0] == 0.0
+    assert max(abs(b - a) for a, b in zip(ks, ks[1:])) < 0.1, "fades over many frames, no hard cut"
+    tilts = [film.tilt(f / FPS) for f in range(int(film.tl["duration"] * FPS))]
+    assert max(abs(b - a) for a, b in zip(tilts, tilts[1:])) < 0.01 * film.H, "the tilt eases in and out"

@@ -1,0 +1,20 @@
+Use your image generation tool to create exactly ONE image. Do not run shell commands.
+
+Draw a PROPS SHEET for a 2D animation: nine separate objects, each a separate island with a wide empty black gap around it. No object touches or overlaps another. Every object is seen from the side or slightly from the front, standing upright on its own flat base line (as if placed on the ground). No robots, no people, no text, no letters, no numbers, no logos, no symbols on any object. Pure solid black background. Landscape 16:9.
+
+Style: clean, friendly 2D illustration in FULL NATURAL COLOR (each object in its real-world colors, rich but not neon), soft shading, with a thin light outline and a faint soft glow around each object so it reads well at night. Not photorealistic, not line-art only.
+
+Top row, left to right (3 objects):
+1. A large shiny gold coin standing upright on its edge on a small dark wooden stand; its face is plain with a simple circuit-line pattern (no letters, no symbols).
+2. A cozy, deep leather armchair in warm brown, seen from the side.
+3. A heavy iron ship's anchor standing upright on its base.
+
+Middle row, left to right (3 objects):
+4. A large red megaphone (loudspeaker horn) on a short stand, its wide mouth pointing to the right.
+5. A brass compass on a small wooden pedestal, its needle glowing.
+6. A small bus stop: a post with a blank round sign and a short bench beside it (no text on the sign).
+
+Bottom row, left to right (3 objects):
+7. A tall stack of thick books with a magnifying glass resting on top.
+8. A large hourglass on a wooden stand, golden sand flowing down.
+9. A small red-and-white lighthouse on a rock, its lamp shining warm yellow.

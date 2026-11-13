@@ -71,3 +71,67 @@ def test_scene_cache_key_changes_with_drawing_code(monkeypatch):
     before = engine._scene_key(scene, th, v, 30)
     monkeypatch.setattr(engine, "CODE", "different-code")
     assert engine._scene_key(scene, th, v, 30) != before
+
+
+def test_every_icon_parses_and_draws_on():
+    from vagent.render import icons
+    from vagent.render.canvas import Canvas
+
+    assert len(icons.names()) > 100
+    for name in icons.names():
+        assert icons.strokes(name), name
+    c = Canvas(200, 200, (0, 0, 0))
+    icons.draw(c, "home", 100, 100, 120, (255, 255, 255), progress=0.5)
+    assert c.finish().getbbox() is not None
+
+
+def test_svg_arc_and_relative_commands():
+    from vagent.render.icons import parse_path
+
+    (line,) = parse_path("M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0")  # a full circle of radius 10
+    assert all(abs(((x - 12) ** 2 + (y - 12) ** 2) ** 0.5 - 10) < 1e-6 for x, y in line)
+    (line,) = parse_path("M5 12l-2 0l9 -9l9 9h-2v7z")
+    assert line[:4] == [(5, 12), (3, 12), (12, 3), (21, 12)] and line[-1] == (5, 12)
+
+
+def test_diagram_components_are_registered_with_samples_and_purposes():
+    from vagent.plan.planner import PURPOSE
+
+    for name in ("balance", "cycle", "dialogue"):
+        assert name in REGISTRY and name in PURPOSE
+        for lang in ("zh", "en"):
+            REGISTRY[name][1].model_validate(SAMPLES[lang][name])
+    assert REGISTRY["checklist"][1].model_validate({"items": ["a", "b"], "mode": "ticks"}).mode == "ticks"
+
+
+@pytest.mark.parametrize("name", ["balance", "cycle", "dialogue"])
+def test_diagram_components_animate(name):
+    th, v = theme(CONFIG, "zh"), variant("zh_shipinhao")
+    scene = engine.SceneSpec(name, name, SAMPLES["zh"][name], 0.0, 7.0, [0.3, 1.3, 2.3, 3.3])
+    early, _ = engine.render_frame(scene, 0.5, th, v)
+    late, records = engine.render_frame(scene, 6.0, th, v)
+    assert early.tobytes() != late.tobytes()
+    assert records and outside(records, v.content) == []
+
+
+def test_demo_reel_names_every_component():
+    from vagent.render.demo import NAMES_ZH
+
+    assert set(NAMES_ZH) == set(REGISTRY)
+
+
+@pytest.mark.parametrize("lang,vname", [("zh", "zh_shipinhao"), ("en", "en_x")])
+@pytest.mark.parametrize("name", list(REGISTRY))
+def test_text_stays_in_content_area_with_the_camera_push(lang, vname, name):
+    # the push enlarges the frame about the content centre; text laid out flush with the content edge
+    # used to end up outside it (a 4-item checklist with a title, short_vs_long labels)
+    from vagent.render import motion
+
+    th, v = theme(CONFIG, lang), variant(vname)
+    params = dict(SAMPLES[lang][name])
+    if name == "checklist":
+        params["items"] = (params["items"] * 2)[:5]
+    scene = engine.SceneSpec(name, name, params, 0.0, 7.0, [0.3, 1.3, 2.3, 3.3, 4.3])
+    engine.fit_scene(scene, th, v)
+    _, records = engine.render_frame(scene, 7.0 - motion.LEAVE - 0.05, th, v)
+    assert outside(records, v.content) == []

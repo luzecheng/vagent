@@ -62,9 +62,9 @@ def check(config: dict) -> int:
     try:
         import faster_whisper  # noqa: F401
 
-        item(True, "faster-whisper (ASR check)", "installed")
+        item(True, "faster-whisper (ASR check, CosyVoice timing)", "installed")
     except ImportError:
-        item(False, "faster-whisper (ASR check)", "missing", ".venv/bin/pip install faster-whisper")
+        item(False, "faster-whisper (ASR check, CosyVoice timing)", "missing", '.venv/bin/pip install -e ".[test]"')
     try:
         import espeakng_loader
 

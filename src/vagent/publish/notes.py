@@ -76,12 +76,16 @@ def draft(zh_text: str, en_text: str, disclaimer: dict, brand: dict, config: dic
             problems.append("shipinhao_description is longer than 200 characters")
         weighted = x_length(_full_post(notes, None))
         if weighted > budget:
-            problems.append(f"x_post plus hashtags is {weighted} weighted characters; must be <= {budget}")
+            problems.append(f"x_post plus hashtags is {weighted} weighted characters; must be <= {budget}: "
+                            f"cut at least {weighted - budget} characters (aim for about {budget - 60})")
         if re.search(r"[一-鿿]", notes.x_post + " ".join(notes.x_hashtags)):
             problems.append("the X post must be English only")
         return problems
 
-    user = f"Chinese script:\n{zh_text}\n\nEnglish script:\n{en_text}"
+    # state the X limit up front: enforced only after the fact, the model guessed and could run out of retries
+    user = (f"Chinese script:\n{zh_text}\n\nEnglish script:\n{en_text}\n\n"
+            f"X length: x_post plus its hashtags (each '#tag' and the blank line before them count) must be at most "
+            f"{budget} characters (X's limit is 280); aim for about {budget - 60}.")
     store = cachemod.Cache(config["paths"]["cache"], "llm/publish")
     digest = cachemod.key(SYSTEM, user, budget, config["llm"]["model"], 1)
     cached = store.get_json(digest)

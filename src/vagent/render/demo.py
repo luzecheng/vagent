@@ -15,7 +15,8 @@ from .theme import theme as make_theme, variant as make_variant
 NAMES_ZH = {"hook": "大字钩子", "keyword": "关键词", "compare_cards": "对比卡片", "trend": "趋势曲线",
             "short_vs_long": "短期 vs 长期", "timeline": "时间线", "bars": "柱状对比", "big_number": "大数字",
             "quote": "引用语", "checklist": "清单", "strike": "划掉旧观点", "three_things": "三件事",
-            "question_stack": "连续提问", "choice_consequence": "选择 vs 后果", "punchline": "金句放大"}
+            "question_stack": "连续提问", "choice_consequence": "选择 vs 后果", "punchline": "金句放大",
+            "balance": "天平取舍", "cycle": "循环改进", "dialogue": "对话气泡"}
 
 
 def gallery_reel(lang: str, out: Path, config: dict, log, seconds: float = 3.4) -> Path:
