@@ -123,6 +123,23 @@ git-ignored, for settings specific to this machine) → command-line flags.
 .venv/bin/python -m pytest -q tests
 ```
 
+### Optional GitHub-to-Codex development workflow
+
+The V2 workflow is disabled unless explicitly enabled. To opt in, an open issue
+must be authored by the configured owner, carry the `codex-dev` label, and
+contain `<!-- vagent-codex-dev-approved-v1 -->`. Polling only enqueues issue
+metadata; issue titles and bodies are never shell commands or queue commands.
+
+```bash
+PYTHONPATH=src .venv/bin/python -m tools.github_codex_workflow \
+  --enable --queue-root .local/codex-queue
+```
+
+The queue uses isolated worktrees and fixed, bounded commands. It does not push,
+merge, deploy, publish raw logs, or alter the existing read-only daemon. Review
+the local queue and run the worker deliberately; do not enable this workflow on
+an unattended checkout.
+
 ## License
 
 [MIT](LICENSE). The voice models (Kokoro, CosyVoice), Whisper and the fonts (Inter, Noto Sans CJK) are downloaded

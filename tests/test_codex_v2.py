@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 
 from tools.codex_daemon import QueueRejected, Task, TaskQueue
-from tools.codex_dev_worker import Acceptance, Execution, accept_artifacts, redact, status_record
+from tools.codex_dev_worker import Acceptance, Execution, accept_artifacts, command_for_task, redact, status_record
 
 
 def task(**overrides):
@@ -45,3 +45,10 @@ def test_acceptance_is_distinct_and_status_has_no_log_or_issue_text():
                       "artifact_acceptance": "accepted", "missing_artifacts": [], "duration_seconds": 0.2}
     assert "secret=[REDACTED]" in redact("secret=abc")
     assert "Bearer [REDACTED]" in redact("Bearer abc")
+
+
+def test_codex_command_is_fixed_and_contains_only_issue_number():
+    command = command_for_task(task(kind="codex_development", issue_number=10))
+    assert command[:6] == ["codex", "exec", "--sandbox", "workspace-write", "--ask-for-approval", "never"]
+    assert command[-1].endswith("Issue number: 10.")
+    assert "ignore; rm -rf /" not in " ".join(command)

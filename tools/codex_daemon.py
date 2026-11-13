@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any
 
-ALLOWED_TASK_KINDS = frozenset({"unit_tests"})
+ALLOWED_TASK_KINDS = frozenset({"unit_tests", "codex_development"})
 TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 
