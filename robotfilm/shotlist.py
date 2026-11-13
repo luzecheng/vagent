@@ -16,6 +16,7 @@ SIZE_ZH = {"full": "全景", "medium": "中景", "close": "近景"}
 ANGLE_ZH = {"side": "侧面", "front": "正面", "back": "背后", "three_quarter": "斜前方", "low": "仰拍", "high": "俯拍",
             "over_shoulder": "过肩"}
 MAX_ANGLES = 2                   # other camera angles per film: once or twice, never more (the user, 2026-11-12)
+MAX_SHOT_S = 14.0                # longer shots need explicit micro-actions or a split
 CAMERA_ZH = {"follow": "跟拍", "hold": "固定", "push in": "推近", "pull out": "拉远", "wait": "固定等它走进来"}
 
 
@@ -45,6 +46,8 @@ def rows(film: Film) -> list[dict]:
             moves.append(f"{b['drift']} drift by")
         if callable(b.get("pose")):
             moves.append("gestures")
+        if b.get("actions"):
+            moves.append(" / ".join(str(a.get("pose", "stand")) for a in b["actions"]))
         mid = s["start"] + dur / 2
         for st in film.stations:
             if st["t_in"] <= mid <= st["t_out"]:
@@ -55,9 +58,15 @@ def rows(film: Film) -> list[dict]:
             moves.append("camera")
         nxt = film.beat(i + 1) if i + 1 < len(film.shots) else {}
         cut = b.get("leave") or nxt.get("enter")
+        stations = [st for st in film.stations if st["i"] == i]
+        overlaps = []
+        for left, right in zip(stations, stations[1:]):
+            if abs(left["x"] - right["x"]) < (left["w"] + right["w"]) * 0.42:
+                overlaps.append(f"{left['name']} / {right['name']}")
         out.append({"id": s["id"], "dur": round(dur, 1), "size": film.shot_size(i), "camera": camera,
                     "angle": b.get("angle") or ("front" if b.get("front") else "side"),
-                    "moves": moves, "words": bool(b.get("fx")), "to_next": "cut" if cut else "continuous",
+                    "moves": moves, "station_overlaps": overlaps, "words": bool(b.get("fx")),
+                    "to_next": "cut" if cut else "continuous",
                     "text": s.get("narration", "")})
     return out
 
@@ -77,6 +86,14 @@ def warnings(rs: list[dict]) -> list[str]:
     for r in rs:
         if not r["moves"]:
             w.append(f"shot {r['id']}: nothing moves (camera holds, no walk, no moving prop)")
+        if float(r.get("dur", 0.0)) > MAX_SHOT_S and not any(" / " in move for move in r["moves"]):
+            w.append(f"shot {r['id']}: {r['dur']}s is long — split the narration or add a timed actions sequence")
+        if r.get("station_overlaps"):
+            w.append(f"shot {r['id']}: props overlap ({', '.join(r['station_overlaps'])}) — separate their anchors")
+        for move in (move for move in r["moves"] if " / " in move):
+            poses = [p.strip() for p in move.split("/")]
+            if any(a == b for a, b in zip(poses, poses[1:])):
+                w.append(f"shot {r['id']}: repeated adjacent pose in actions — vary the robot's gesture")
     return w
 
 

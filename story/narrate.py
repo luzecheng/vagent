@@ -113,7 +113,7 @@ def has_lang(storyboard: dict, lang: str) -> bool:
 
 
 def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
-            lang: str = "zh") -> tuple[np.ndarray, dict]:
+            lang: str = "zh", alignment_out: list | None = None) -> tuple[np.ndarray, dict]:
     """Return (mono voice track at vagent's SR, timeline).  draft=True: no TTS, estimated timing, silent track."""
     shots = storyboard["shots"]
     field, quote_field = FIELDS[lang]
@@ -130,6 +130,7 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
     provider = None if draft else get_provider(spec, config["paths"]["models"])
     cache = cachemod.Cache(config["paths"]["cache"], f"tts/{lang}")
     spoken_sentences = []                   # (script text, audio) per sentence, for the listening check
+    alignment = []                          # auditable timing quality for CosyVoice/other inexact engines
     pauses = config["tts"]["pause_s"]
     waited = {}                             # shot index -> silence added after it for its picture to finish
 
@@ -144,6 +145,8 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
         else:
             speech = _synth_cached(provider, spoken_text(text, lang), lang, spec["voice"], speed, cache)
             spoken_sentences.append((text, speech.audio))
+        alignment.append({"sentence": n + 1, "exact": speech.exact, "engine": speech.engine,
+                          "notes": list(speech.notes)})
         units = speech.units
         for c in range(a, b):
             k = _units_in(full[a:c], lang) if c > a else 0
@@ -189,6 +192,8 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
     subs = [sub for t in timeline for sub in t["subs"]]
     for this, after in zip(subs, subs[1:]):   # one line on screen at a time, also across shots
         this["end"] = round(min(this["end"], after["start"] - 0.05), 3)
+    if alignment_out is not None:
+        alignment_out.extend(alignment)
     return audio, {"duration": round(duration, 3), "shots": timeline, "draft": draft, "lang": lang,
                    "scenery": bool(storyboard.get("scenery")), "_spoken": spoken_sentences}
 

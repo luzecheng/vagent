@@ -26,7 +26,7 @@ import cairo
 
 from vagent import config as configmod
 from story.render import FPS, PORTRAIT_WORDS as PW, SUB_SIZE, fit_rows, quote_lines, runs
-from story.stage import GOLD, WHITE, circle, ramp, text, text_runs
+from story.stage import FONT, GOLD, WHITE, circle, ramp, text, text_runs
 from story import narrate as narration
 
 ICE = (0.55, 0.85, 1.0)
@@ -40,6 +40,7 @@ class Film:
         self.W, self.H, self.portrait = W, H, H > W
         self.u = min(W, H) / 1080
         self.tl, self.shots = timeline, timeline["shots"]
+        self.subtitle_panel = getattr(getattr(self, "ep", None), "SUBTITLE_PANEL", False)
         self.images = {}
         for s in self.shots:
             for key in ("frame", "frame_end"):
@@ -268,6 +269,27 @@ class Film:
                     size = SUB_SIZE["portrait" if portrait else "landscape"] * u
                     rows, size = fit_rows(cr, sub["text"], size, W * (PW["width"] if portrait else 0.82), keep=keys)
                     base = H * (PW["sub"] if portrait else 0.895) - (len(rows) - 1) * size * 1.3
+                    if self.subtitle_panel:
+                        # Keep subtitles readable over clouds, hills and bright
+                        # props while leaving the scene visible through a soft panel.
+                        cr.save()
+                        cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+                        cr.set_font_size(size)
+                        widths = [cr.text_extents(row).x_advance for row in rows]
+                        panel_w = min(W * (0.86 if portrait else 0.78), max(widths) + 44 * u)
+                        panel_h = len(rows) * size * 1.3 + 26 * u
+                        panel_x = W * (PW["x"] if portrait else 0.5) - panel_w / 2
+                        panel_y = base - size - 13 * u
+                        radius = 16 * u
+                        cr.new_sub_path()
+                        cr.arc(panel_x + panel_w - radius, panel_y + radius, radius, -math.pi / 2, 0)
+                        cr.arc(panel_x + panel_w - radius, panel_y + panel_h - radius, radius, 0, math.pi / 2)
+                        cr.arc(panel_x + radius, panel_y + panel_h - radius, radius, math.pi / 2, math.pi)
+                        cr.arc(panel_x + radius, panel_y + radius, radius, math.pi, 3 * math.pi / 2)
+                        cr.close_path()
+                        cr.set_source_rgba(0.01, 0.02, 0.05, 0.62 * a)
+                        cr.fill()
+                        cr.restore()
                     for n, row in enumerate(rows):
                         parts = [(s, GOLD if gold else WHITE) for s, gold in runs(row, keys)]
                         text_runs(cr, parts, size, W * PW["x"] if portrait else W / 2, base + n * size * 1.3, a=a,

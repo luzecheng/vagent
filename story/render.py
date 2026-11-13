@@ -545,11 +545,19 @@ def render_language(folder: Path, sb: dict, lang: str, args) -> None:
     formats = formats_for(lang, args)
     print(f"--- {lang}", flush=True)
 
-    audio, timeline = narration.narrate(sb, config, log=lambda m: print(m, flush=True), draft=args.draft, lang=lang)
+    alignment = []
+    audio, timeline = narration.narrate(sb, config, log=lambda m: print(m, flush=True), draft=args.draft, lang=lang,
+                                        alignment_out=alignment)
     spoken = timeline.pop("_spoken")
     key = "" if lang == "zh" else f"_{lang}"
     timeline["cover"] = {"title": sb.get(f"cover_title{key}", sb.get(f"title{key}", "")),
                          "subtitle": sb.get(f"cover_subtitle{key}", "")}
+    (folder / f"alignment{tag}.json").write_text(json.dumps({
+        "sentences": alignment,
+        "exact_sentences": sum(1 for row in alignment if row["exact"]),
+        "total_sentences": len(alignment),
+        "mode": "exact" if alignment and all(row["exact"] for row in alignment) else "whisper_or_proportional",
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
     for w in narration.waits(timeline):
         print(f"  wait {w['wait_s']:.1f}s after shot {w['id']} ({w['scene']}): {w['narration']}  "
               "-> the line is shorter than the picture: merge it with a neighbouring shot or pick a quicker scene",

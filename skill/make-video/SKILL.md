@@ -43,6 +43,13 @@ Read `<vagent>/robotfilm/robot_story.py` (top docstring) and the last episode's 
 example (`robotfilm/examples/讨论即开发_beats.py`, its props prompt next to it); shared helpers are in `robotfilm/fx.py`.
 Do not stop for storyboard confirmation (the user wants the video made directly).
 
+**Offline Robot mode (when Claude Code/Claude CLI is unavailable).** Robot production does not require an LLM at
+render time: write the storyboard from the supplied script using the scene catalog, use the local configured TTS,
+generate the props sheet with Codex, and run `story.render --stills` followed by `robotfilm.robot_story`. Skip the
+Classic `vagent run` path's localization, LLM storyboard and LLM publish-copy calls. The Chinese Robot video can be
+completed entirely offline; write `publish_notes.md` from the script manually, and make the English version only
+when an English script is available. The renderer records `alignment*.json` with exact/Whisper alignment notes.
+
 1. **Storyboard and voice.** Write `output/YYYY-MM-DD_<short-name>/storyboard.json` as in 2S step 1 (narration word
    for word, `narration_en`, `highlight`, 1–3 `quote`, cover fields), every shot `"scene": "walk"`. Then run
    `<vagent>/.venv/bin/python -m story.render <folder> --stills` in the background: it only synthesizes the voice
@@ -81,6 +88,18 @@ Do not stop for storyboard confirmation (the user wants the video made directly)
      (a strike-through, an arrow between two labels) inside `with fx.screen_space(cr):`, and measure labels
      with `fx.label_width`. Things standing in the world (bubbles over the robot, effects at a prop) are
      drawn normally and move with the camera.
+   - keep the series identity stable: use the checked-in robot side/front/angle assets, declare exactly nine
+     unique `PROPS` names in the same order as the generated props sheet, and set `SOLID_PROPS = True` for the
+     colour-night series. The renderer validates this contract before spending time on a full render.
+   - for a long shot, use a timed `actions` list instead of one static pose, for example
+     `actions=[{"pose": "think", "duration": 2}, {"pose": "point", "duration": 3},
+     {"pose": "look_up", "duration": 2}]`. Named poses include `stand`, `think`, `look_up`, `point`,
+     `shrug`, `read`, `bow`, `hold`, `wave` and `work`; old pose dictionaries and callables remain supported.
+     `shotlist` warns when a shot is longer than 14 seconds without a timed action sequence, so split it or add
+     micro-actions before rendering.
+   - set `SUBTITLE_PANEL = True` for new colour-night episodes. This adds a soft
+     translucent subtitle panel while preserving keyword highlighting; old episodes without the flag keep their
+     original subtitle pixels for reproducibility.
 4. **Shot list, check sheets, then render.** `.venv/bin/python -m robotfilm.shotlist <folder>` writes
    `robot2/review/shotlist.md` (size, camera, what moves, cut or continuous, per shot) and prints warnings:
    fix every "nothing moves" and "three … in a row" in beats.py before rendering.

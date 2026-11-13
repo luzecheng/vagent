@@ -35,6 +35,8 @@ from story.stage import GOLD, WHITE, ramp, text
 from .compose import Film as WordsFilm, merged_timeline
 from .front import Front
 from .puppet import ICE, _surface
+from .poses import resolve
+from .series_assets import validate as validate_series_assets
 from .walker import STAND, Walker, blend, cutout, load_side_parts, walk_pose
 from .world import HORIZON, WIDE, StoryWorld, World, soft_ellipse
 
@@ -238,6 +240,8 @@ class Film(WordsFilm):
         self.tl, self.shots, self.lang = timeline, timeline["shots"], lang
         self.ep = beats
         self.beats = beats.BEATS
+        self.subtitle_panel = getattr(beats, "SUBTITLE_PANEL", False)
+        self.asset_manifest = validate_series_assets(folder, list(getattr(beats, "PROPS", PROPS)), ASSETS)
         # while it plays only the subtitles carry words (the user's choice, 2026-11-12): no sky words or gold quotes
         # unless an episode asks with SKY_WORDS / QUOTES = True; the opening title card stays (COVER_TITLE = False
         # to drop it)
@@ -275,7 +279,16 @@ class Film(WordsFilm):
 
     def action_pose(self, i, lt):
         b, s = self.beat(i), self.shots[i]
-        p = b.get("pose", STAND)
+        actions = b.get("actions")
+        if actions:
+            elapsed = max(0.0, lt)
+            for action in actions:
+                duration = float(action.get("duration", 0.0))
+                if elapsed <= duration or action is actions[-1]:
+                    p = resolve(action.get("pose", "stand"))
+                    return p(elapsed, duration) if callable(p) else p
+                elapsed -= duration
+        p = resolve(b.get("pose", STAND))
         return p(lt, s["end"] - s["start"]) if callable(p) else p
 
     def pose(self, t):
