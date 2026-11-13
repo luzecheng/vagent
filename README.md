@@ -135,10 +135,12 @@ PYTHONPATH=src .venv/bin/python -m tools.github_codex_workflow \
   --enable --queue-root .local/codex-queue
 ```
 
-The queue uses isolated worktrees and fixed, bounded commands. It does not push,
-merge, deploy, publish raw logs, or alter the existing read-only daemon. Review
-the local queue and run the worker deliberately; do not enable this workflow on
-an unattended checkout.
+The queue uses isolated worktrees and fixed, bounded commands. A development task
+is validated with the repository test command, committed to a dedicated
+`codex/issue-N` branch, pushed, and opened as a Draft PR. Push and PR failures
+retain the worktree for `retry_delivery`; nothing is merged, deployed, released,
+or published automatically. Review the local queue and run the worker deliberately;
+do not enable this workflow on an unattended checkout.
 
 ## License
 

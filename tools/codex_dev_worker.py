@@ -14,12 +14,19 @@ import re
 import subprocess
 import sys
 import time
-from typing import Callable
+from typing import Any, Callable
 
 from .codex_daemon import Task, TaskQueue
 
+DELIVERY_REPO = "luzecheng/vagent"
+
 MAX_RUNTIME_SECONDS = 15 * 60
 CLEANUP_TIMEOUT_SECONDS = 5
+BASE_BRANCH = "main"
+SENSITIVE_PATH = re.compile(
+    r"(^|/)(\.env(?:\..*)?|\.codex(?:/|$)|\.aws(?:/|$)|\.local(?:/|$)|config/local(?:\..*)?|logs?(?:/|$)|.*\.(?:log|pem|key|p12|pfx)|credentials(?:\..*)?|.*secret.*|.*token.*)$",
+    re.IGNORECASE,
+)
 _SECRET = re.compile(r"(?i)(token|secret|password|authorization|api[-_ ]?key)\s*[:=]\s*[^\s,;]+")
 _BEARER = re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+")
 CODEX_PROMPT = (
@@ -43,6 +50,82 @@ class Execution:
 class Acceptance:
     status: str
     missing: tuple[str, ...] = ()
+
+
+class DeliveryError(RuntimeError):
+    """A change could not be safely delivered; the worktree must be retained."""
+
+
+class GitDelivery:
+    """Allowlisted Git/GitHub delivery operations, injectable in tests."""
+
+    def __init__(self, repo_root: Path, *, runner: Callable[..., Any] = subprocess.run,
+                 timeout_seconds: int = 300):
+        self.repo_root = Path(repo_root)
+        self.runner = runner
+        self.timeout_seconds = timeout_seconds
+
+    def _run(self, argv: list[str], *, cwd: Path | None = None, check: bool = True) -> Any:
+        result = self.runner(argv, cwd=cwd or self.repo_root, check=False,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, timeout=self.timeout_seconds)
+        if check and result.returncode != 0:
+            raise DeliveryError(f"{argv[0]} failed: {redact(result.stdout or '')}")
+        return result
+
+    def create_worktree(self, worktree: Path, branch: str) -> None:
+        self._run(["git", "worktree", "add", "-b", branch, str(worktree), BASE_BRANCH])
+
+    def changed_paths(self, worktree: Path) -> tuple[str, ...]:
+        result = self._run(["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=worktree)
+        paths = []
+        for line in (result.stdout or "").splitlines():
+            if len(line) >= 4:
+                paths.append(line[3:].split(" -> ", 1)[-1])
+        return tuple(paths)
+
+    def validate_tests(self, worktree: Path, timeout: float) -> Any:
+        result = self.runner([sys.executable, "-m", "pytest", "-q"], cwd=worktree,
+                             check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, timeout=timeout)
+        if result.returncode != 0:
+            raise DeliveryError(f"validation tests failed: {redact(result.stdout or '')}")
+        return result
+
+    def commit_push(self, worktree: Path, branch: str, message: str) -> None:
+        self._run(["git", "add", "--all"], cwd=worktree)
+        staged = self._run(["git", "diff", "--cached", "--name-only"], cwd=worktree)
+        paths = tuple(x for x in (staged.stdout or "").splitlines() if x)
+        if not paths:
+            raise DeliveryError("validation produced no changes to deliver")
+        unsafe = tuple(path for path in paths if SENSITIVE_PATH.search(path))
+        if unsafe:
+            self._run(["git", "reset", "--", *paths], cwd=worktree, check=False)
+            raise DeliveryError("sensitive or local-only files are not deliverable")
+        self._run(["git", "commit", "-m", message], cwd=worktree)
+        self._run(["git", "push", "--set-upstream", "origin", branch], cwd=worktree)
+
+    def push_existing(self, worktree: Path, branch: str) -> None:
+        """Retry delivery of a commit that already exists in the retained worktree."""
+        compared = self._run(["git", "diff", "--quiet", f"{BASE_BRANCH}...HEAD"], cwd=worktree, check=False)
+        if compared.returncode == 0:
+            raise DeliveryError("retained worktree has no committed change to deliver")
+        self._run(["git", "push", "--set-upstream", "origin", branch], cwd=worktree)
+
+    def create_draft_pr(self, *, repo: str, branch: str, issue_number: int) -> str:
+        result = self._run([
+            "gh", "pr", "create", "--repo", repo, "--head", branch,
+            "--base", BASE_BRANCH, "--draft", "--title",
+            f"Issue #{issue_number}: Codex implementation", "--body",
+            f"Automated implementation for explicitly approved issue #{issue_number}.\n\nHuman review required.",
+        ])
+        url = (result.stdout or "").strip()
+        if not url:
+            raise DeliveryError("GitHub did not return a Draft PR URL")
+        return url
+
+    def remove_worktree(self, worktree: Path) -> None:
+        self._run(["git", "worktree", "remove", str(worktree)], check=False)
 
 
 def redact(value: str) -> str:
@@ -78,12 +161,14 @@ def command_for_task(task: Task) -> list[str]:
 
 class Worker:
     def __init__(self, queue: TaskQueue, repo_root: Path, worktree_root: Path,
-                 *, timeout_seconds: int = 300, reporter: Callable[[dict[str, object]], None] | None = None):
+                 *, timeout_seconds: int = 300, reporter: Callable[[dict[str, object]], None] | None = None,
+                 delivery: GitDelivery | None = None):
         if timeout_seconds < 1 or timeout_seconds > MAX_RUNTIME_SECONDS:
             raise ValueError(f"timeout must be between 1 and {MAX_RUNTIME_SECONDS} seconds")
         self.queue, self.repo_root = queue, Path(repo_root).resolve()
         self.worktree_root = Path(worktree_root).resolve()
         self.timeout_seconds, self.reporter = timeout_seconds, reporter
+        self.delivery = delivery or GitDelivery(self.repo_root)
 
     def run_once(self, task_id: str) -> dict[str, object] | None:
         task = self.queue.claim(task_id)
@@ -99,9 +184,9 @@ class Worker:
         acceptance = Acceptance("not_run")
         try:
             self._event(log_path, "worktree_create")
-            subprocess.run(["git", "worktree", "add", "--detach", str(worktree), "HEAD"],
-                           cwd=self.repo_root, check=True, timeout=self._remaining(deadline),
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            branch = self.branch_for(task)
+            if not worktree.exists():
+                self.delivery.create_worktree(worktree, branch)
             command = command_for_task(task)
             self._event(log_path, "execution_start", command="codex" if task.kind == "codex_development" else "pytest")
             try:
@@ -115,7 +200,11 @@ class Worker:
                 execution = Execution("timed_out", None, time.monotonic() - started, str(log_path))
             acceptance = accept_artifacts(worktree, task.expected_artifacts) if execution.status == "passed" else Acceptance("not_run")
             success = execution.status == "passed" and acceptance.status == "accepted"
-            result = status_record(task, execution, acceptance)
+            if success and task.kind == "codex_development":
+                result = status_record(task, execution, acceptance)
+                result["draft_pr"] = self._deliver(task, worktree, branch, deadline, log_path)
+            else:
+                result = status_record(task, execution, acceptance)
             self.queue.finish(task.task_id, success=success, result=result)
             if self.reporter:
                 self.reporter(result)
@@ -130,10 +219,67 @@ class Worker:
                 self.reporter(result)
             return result
         finally:
-            if worktree.exists():
-                subprocess.run(["git", "worktree", "remove", "--force", str(worktree)],
-                               cwd=self.repo_root, check=False, timeout=CLEANUP_TIMEOUT_SECONDS,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Undelivered changes are deliberately retained for inspection/recovery.
+            pass
+
+    def retry_delivery(self, task_id: str) -> dict[str, object] | None:
+        """Retry only Git/GitHub delivery after a failed push or PR creation."""
+        task = self.queue.failed_task(task_id)
+        if task is None or task.kind != "codex_development" or not self.queue.requeue_failed(task_id):
+            return None
+        task = self.queue.claim(task_id)
+        if task is None:
+            return None
+        worktree = self.worktree_root / task.task_id
+        branch = self.branch_for(task)
+        log_path = self.queue.root / "logs" / f"{task.task_id}.jsonl"
+        try:
+            if not worktree.exists():
+                raise DeliveryError("retained worktree is missing")
+            if task.repo != DELIVERY_REPO:
+                raise DeliveryError("repository is outside the configured delivery boundary")
+            self.delivery.push_existing(worktree, branch)
+            pr_url = self.delivery.create_draft_pr(repo=task.repo, branch=branch,
+                                                   issue_number=task.issue_number or 0)
+            self.delivery.remove_worktree(worktree)
+            result = {"task_id": task.task_id, "issue_number": task.issue_number,
+                      "execution": "recovered", "artifact_acceptance": "accepted",
+                      "missing_artifacts": [], "draft_pr": pr_url}
+            self.queue.finish(task.task_id, success=True, result=result)
+            if self.reporter:
+                self.reporter(result)
+            return result
+        except Exception as exc:
+            result = {"task_id": task.task_id, "issue_number": task.issue_number,
+                      "execution": "failed", "artifact_acceptance": "not_run",
+                      "missing_artifacts": [], "error": redact(f"{type(exc).__name__}: {exc}")}
+            self._event(log_path, "delivery_retry_error", error=result["error"])
+            self.queue.finish(task.task_id, success=False, result=result)
+            if self.reporter:
+                self.reporter(result)
+            return result
+
+    @staticmethod
+    def branch_for(task: Task) -> str:
+        if task.kind != "codex_development" or task.issue_number is None:
+            return f"codex/{task.task_id}"
+        return f"codex/issue-{task.issue_number}"
+
+    def _deliver(self, task: Task, worktree: Path, branch: str, deadline: float, log_path: Path) -> str:
+        if task.repo != DELIVERY_REPO:
+            raise DeliveryError("repository is outside the configured delivery boundary")
+        paths = self.delivery.changed_paths(worktree)
+        if not paths:
+            raise DeliveryError("Codex exited successfully but produced no changes")
+        self._event(log_path, "validation_start")
+        self.delivery.validate_tests(worktree, self._remaining(deadline))
+        self._event(log_path, "validation_passed")
+        self.delivery.commit_push(worktree, branch, f"Issue #{task.issue_number}: implement approved change")
+        self._event(log_path, "pushed", branch=branch)
+        pr_url = self.delivery.create_draft_pr(repo=task.repo, branch=branch, issue_number=task.issue_number or 0)
+        self._event(log_path, "draft_pr_created", url=pr_url)
+        self.delivery.remove_worktree(worktree)
+        return pr_url
 
     @staticmethod
     def _remaining(deadline: float) -> float:

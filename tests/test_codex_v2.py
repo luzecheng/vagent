@@ -1,8 +1,10 @@
 import pytest
 from pathlib import Path
+from types import SimpleNamespace
 
 from tools.codex_daemon import QueueRejected, Task, TaskQueue
-from tools.codex_dev_worker import Acceptance, Execution, accept_artifacts, command_for_task, redact, status_record
+from tools import codex_dev_worker
+from tools.codex_dev_worker import Acceptance, Execution, Worker, accept_artifacts, command_for_task, redact, status_record
 
 
 def task(**overrides):
@@ -52,3 +54,102 @@ def test_codex_command_is_fixed_and_contains_only_issue_number():
     assert command[:6] == ["codex", "exec", "--sandbox", "workspace-write", "--ask-for-approval", "never"]
     assert command[-1].endswith("Issue number: 10.")
     assert "ignore; rm -rf /" not in " ".join(command)
+
+
+class FakeDelivery:
+    def __init__(self, tmp_path, *, fail_at=None):
+        self.tmp_path = tmp_path
+        self.fail_at = fail_at
+        self.calls = []
+
+    def create_worktree(self, worktree, branch):
+        self.calls.append(("worktree", branch))
+        worktree.mkdir(parents=True, exist_ok=True)
+
+    def changed_paths(self, worktree):
+        return ("src/change.py",)
+
+    def validate_tests(self, worktree, timeout):
+        self.calls.append("validate")
+        if self.fail_at == "validate":
+            raise codex_dev_worker.DeliveryError("tests failed")
+
+    def commit_push(self, worktree, branch, message):
+        self.calls.append(("push", branch))
+        if self.fail_at == "push":
+            raise codex_dev_worker.DeliveryError("push failed")
+
+    def create_draft_pr(self, *, repo, branch, issue_number):
+        self.calls.append(("pr", repo, branch, issue_number))
+        if self.fail_at == "pr":
+            raise codex_dev_worker.DeliveryError("pr failed")
+        return "https://github.example/draft/1"
+
+    def push_existing(self, worktree, branch):
+        self.calls.append(("retry-push", branch))
+        if self.fail_at == "push":
+            raise codex_dev_worker.DeliveryError("push failed")
+
+    def remove_worktree(self, worktree):
+        self.calls.append("remove")
+        worktree.rmdir()
+
+
+def run_codex_worker(tmp_path, monkeypatch, delivery):
+    queue = TaskQueue(tmp_path / "queue", owner="alice", enabled=True)
+    item = task(task_id="issue-10", owner="alice", kind="codex_development",
+                repo="luzecheng/vagent", issue_number=10)
+    assert queue.enqueue(item)
+    monkeypatch.setattr(codex_dev_worker.subprocess, "run",
+                        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="ok"))
+    worker = Worker(queue, tmp_path / "repo", tmp_path / "worktrees",
+                    timeout_seconds=30, delivery=delivery)
+    return queue, worker, worker.run_once("issue-10")
+
+
+def test_delivery_success_commits_pushes_draft_pr_then_removes_worktree(tmp_path, monkeypatch):
+    delivery = FakeDelivery(tmp_path)
+    queue, worker, result = run_codex_worker(tmp_path, monkeypatch, delivery)
+    assert result["execution"] == "passed"
+    assert (delivery.calls[0][0], delivery.calls[1], delivery.calls[2][0], delivery.calls[-1]) == (
+        "worktree", "validate", "push", "remove")
+    assert (queue.root / "completed" / "issue-10.json").exists()
+    assert not (tmp_path / "worktrees" / "issue-10").exists()
+
+
+@pytest.mark.parametrize("failure", ["validate", "push", "pr"])
+def test_delivery_failure_retains_worktree_and_failed_state(tmp_path, monkeypatch, failure):
+    delivery = FakeDelivery(tmp_path, fail_at=failure)
+    queue, worker, result = run_codex_worker(tmp_path, monkeypatch, delivery)
+    assert result["execution"] == "failed"
+    assert (queue.root / "failed" / "issue-10.json").exists()
+    assert (tmp_path / "worktrees" / "issue-10").exists()
+    assert "remove" not in delivery.calls
+
+
+def test_failed_delivery_can_be_requeued_and_recovered_without_losing_worktree(tmp_path, monkeypatch):
+    delivery = FakeDelivery(tmp_path, fail_at="push")
+    queue, worker, _ = run_codex_worker(tmp_path, monkeypatch, delivery)
+    assert queue.requeue_failed("issue-10")
+    delivery.fail_at = None
+    result = worker.run_once("issue-10")
+    assert result["execution"] == "passed"
+    assert (queue.root / "completed" / "issue-10.json").exists()
+    assert "remove" in delivery.calls
+
+
+def test_duplicate_execution_is_not_claimed_twice(tmp_path, monkeypatch):
+    delivery = FakeDelivery(tmp_path)
+    queue, worker, _ = run_codex_worker(tmp_path, monkeypatch, delivery)
+    assert worker.run_once("issue-10") is None
+    assert delivery.calls.count("remove") == 1
+
+
+def test_retry_delivery_reuses_retained_commit_without_rerunning_codex(tmp_path, monkeypatch):
+    delivery = FakeDelivery(tmp_path, fail_at="pr")
+    queue, worker, _ = run_codex_worker(tmp_path, monkeypatch, delivery)
+    delivery.fail_at = None
+    result = worker.retry_delivery("issue-10")
+    assert result["execution"] == "recovered"
+    assert "retry-push" in [x[0] for x in delivery.calls if isinstance(x, tuple)]
+    assert (queue.root / "completed" / "issue-10.json").exists()
