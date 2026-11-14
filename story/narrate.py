@@ -235,7 +235,7 @@ def listen(spoken: list, lang: str = "zh", threshold: float = 0.12) -> list[dict
 def _subtitles(full, a, b, char_time, last_end, lang="zh"):
     """Clause-sized subtitles for one shot's narration, each shown until the next begins."""
     chunks, start = [], a
-    shortest = 5 if lang == "zh" else 14       # shorter clauses ride along with the next one
+    shortest = 10 if lang == "zh" else 14      # keep short mixed-language clauses with the following phrase
     for m in CLAUSE[lang].finditer(full, a, b):
         if m.end() > start:
             chunks.append((start, m.end()))
