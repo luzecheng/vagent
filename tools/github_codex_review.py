@@ -18,7 +18,7 @@ from .codex_dev_worker import DeliveryError, GitDelivery
 REPO_NAME = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 BRANCH_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
 MAX_CONTEXT_CHARS = 12_000
-ACTIONABLE_REVIEW_STATES = frozenset({"COMMENTED", "CHANGES_REQUESTED"})
+ACTIONABLE_REVIEW_STATES = frozenset({"CHANGES_REQUESTED"})
 OUTCOME_MARKER = "<!-- vagent-codex-review-outcome-v1 -->"
 
 
@@ -340,3 +340,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         client.post_outcome(target, f"{OUTCOME_MARKER}\nCodex review repair delivered: {result['commit']}")
         print(json.dumps(result, sort_keys=True))
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
