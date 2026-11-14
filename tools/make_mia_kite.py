@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -17,7 +18,7 @@ import tempfile
 from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
-VOICE = "Samantha"
+VOICE = os.environ.get("MIA_KITE_VOICE", "Sandy (English (US))")
 VOICE_RATE = "145"
 PAUSE = 0.45
 
@@ -59,7 +60,7 @@ def duration(path: Path) -> float:
     return max(values)
 
 
-def make_audio(scenes: tuple[Scene, ...], root: Path) -> tuple[Path, list[tuple[float, float]]]:
+def make_audio(scenes: tuple[Scene, ...], root: Path, voice: str) -> tuple[Path, list[tuple[float, float]]]:
     files: list[Path] = []
     timeline: list[tuple[float, float]] = []
     silence = root / "silence.wav"
@@ -67,7 +68,7 @@ def make_audio(scenes: tuple[Scene, ...], root: Path) -> tuple[Path, list[tuple[
          "-c:a", "pcm_s16le", str(silence)])
     for index, scene in enumerate(scenes, 1):
         path = root / f"voice_{index:02d}.aiff"
-        run(["say", "-v", VOICE, "-r", VOICE_RATE, "-o", str(path), scene.narration])
+        run(["say", "-v", voice, "-r", VOICE_RATE, "-o", str(path), scene.narration])
         files.append(path)
     cursor = 0.0
     concat = root / "audio.concat.txt"
@@ -80,12 +81,6 @@ def make_audio(scenes: tuple[Scene, ...], root: Path) -> tuple[Path, list[tuple[
         if index != len(files) - 1:
             rows.append(f"file '{silence.as_posix()}'")
             cursor += PAUSE
-    minimum = 60.0 if len(scenes) == len(SCENES) else 0.0
-    if cursor < minimum:
-        tail = root / "tail_silence.wav"
-        run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
-             "-t", str(minimum - cursor + 0.1), "-c:a", "pcm_s16le", str(tail)])
-        rows.append(f"file '{tail.as_posix()}'")
     concat.write_text("\n".join(rows) + "\n", encoding="utf-8")
     audio = root / "narration.wav"
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
@@ -183,17 +178,38 @@ def draw_scene(t: float, scene: Scene, subtitle: str, scene_index: int) -> Image
     return image
 
 
-def write_srt(scenes: tuple[Scene, ...], timeline: list[tuple[float, float]], path: Path) -> None:
+def caption_cues(scenes: tuple[Scene, ...], timeline: list[tuple[float, float]]) -> list[tuple[float, float, str]]:
+    """Build short phrase cues from the authoritative concatenated-audio timeline."""
+    cues: list[tuple[float, float, str]] = []
+    for scene, (start, end) in zip(scenes, timeline):
+        words = scene.narration.split()
+        groups = [words[index:index + 6] for index in range(0, len(words), 6)]
+        span = max(0.01, end - start)
+        for index, group in enumerate(groups):
+            cue_start = start + span * index / len(groups)
+            cue_end = start + span * (index + 1) / len(groups)
+            cues.append((cue_start, cue_end, " ".join(group)))
+    return cues
+
+
+def caption_for_time(cues: list[tuple[float, float, str]], current: float) -> str:
+    for start, end, text in cues:
+        if start <= current < end:
+            return text
+    return ""
+
+
+def write_srt(cues: list[tuple[float, float, str]], path: Path) -> None:
     lines = []
-    for index, (scene, (start, end)) in enumerate(zip(scenes, timeline), 1):
+    for index, (start, end, text) in enumerate(cues, 1):
         def stamp(value: float) -> str:
             ms = int(round(value * 1000)); h, ms = divmod(ms, 3600000); m, ms = divmod(ms, 60000); s, ms = divmod(ms, 1000)
             return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-        lines += [str(index), f"{stamp(start)} --> {stamp(end)}", scene.narration, ""]
+        lines += [str(index), f"{stamp(start)} --> {stamp(end)}", text, ""]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def render_video(scenes: tuple[Scene, ...], timeline: list[tuple[float, float]], audio: Path, srt: Path, output: Path, root: Path) -> None:
+def render_video(scenes: tuple[Scene, ...], timeline: list[tuple[float, float]], cues: list[tuple[float, float, str]], audio: Path, srt: Path, output: Path, root: Path) -> None:
     total = duration(audio)
     process = subprocess.Popen(["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                                 "-s", f"{WIDTH}x{HEIGHT}", "-r", str(FPS), "-i", "-",
@@ -205,7 +221,7 @@ def render_video(scenes: tuple[Scene, ...], timeline: list[tuple[float, float]],
         current = frame / FPS
         index = next((i for i, (_, end) in enumerate(timeline) if current <= end + PAUSE), len(scenes)-1)
         start = timeline[index][0]
-        image = draw_scene(current - start, scenes[index], scenes[index].narration if current <= timeline[index][1] else "", index)
+        image = draw_scene(current - start, scenes[index], caption_for_time(cues, current), index)
         process.stdin.write(image.tobytes())
     process.stdin.close()
     if process.wait() != 0:
@@ -213,29 +229,35 @@ def render_video(scenes: tuple[Scene, ...], timeline: list[tuple[float, float]],
     command = ["ffmpeg", "-y", "-i", str(root / "video_only.mp4"), "-i", str(audio), "-i", str(srt),
                "-map", "0:v:0", "-map", "1:a:0", "-map", "2:0", "-c:v", "copy", "-c:a", "aac",
                "-b:a", "128k", "-c:s", "mov_text", "-metadata:s:s:0", "language=eng"]
-    if len(scenes) == len(SCENES):
-        command += ["-af", "apad=pad_dur=60", "-t", "60.2"]
-    else:
-        command += ["-shortest"]
+    command += ["-shortest"]
     run(command + [str(output)])
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--sample", action="store_true", help="render the first two scenes only")
+    parser.add_argument("--sample", action="store_true", help="render the first three scenes only")
+    parser.add_argument("--voice", default=VOICE, help="installed macOS voice, e.g. 'Sandy (English (US))'")
+    parser.add_argument("--version", default="v2", help="output version suffix")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    selected = SCENES[:3] if args.sample else SCENES
+    selected = SCENES[:2] if args.sample else SCENES
     with tempfile.TemporaryDirectory(prefix="mia-kite-") as temporary:
         root = Path(temporary)
-        audio, timeline = make_audio(selected, root)
-        srt = args.output_dir / ("mia_lost_kite_sample.srt" if args.sample else "mia_lost_kite.srt")
-        write_srt(selected, timeline, srt)
-        output = args.output_dir / ("mia_lost_kite_sample.mp4" if args.sample else "mia_lost_kite.mp4")
-        render_video(selected, timeline, audio, srt, output, root)
+        audio, timeline = make_audio(selected, root, args.voice)
+        cues = caption_cues(selected, timeline)
+        stem = f"mia_lost_kite_{args.version}"
+        if args.sample:
+            stem += "_sample"
+        srt = args.output_dir / f"{stem}.srt"
+        write_srt(cues, srt)
+        output = args.output_dir / f"{stem}.mp4"
+        render_video(selected, timeline, cues, audio, srt, output, root)
+        rendered_duration = duration(output)
+        if not args.sample and not 60.0 <= rendered_duration <= 120.0:
+            raise RuntimeError(f"full render duration must be 60-120 seconds, got {rendered_duration:.3f}")
         report = args.output_dir / ("sample_validation.txt" if args.sample else "validation.txt")
-        report.write_text(f"output={output}\nduration_seconds={duration(output):.3f}\nsize=1920x1080\nframerate=30\ncodec=h264/aac\n", encoding="utf-8")
+        report.write_text(f"output={output}\nduration_seconds={rendered_duration:.3f}\nsize=1920x1080\nframerate=30\ncodec=h264/aac\nvoice={args.voice}\ncaptions=phrase-cues-from-final-concatenated-audio-timeline\n", encoding="utf-8")
     print(output)
     return 0
 
