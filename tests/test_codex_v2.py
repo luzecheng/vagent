@@ -69,6 +69,9 @@ class FakeDelivery:
     def changed_paths(self, worktree):
         return ("src/change.py",)
 
+    def inspect_state(self, worktree, branch):
+        return codex_dev_worker.DeliveryState.PUSHED_AWAITING_PR
+
     def validate_tests(self, worktree, timeout):
         self.calls.append("validate")
         if self.fail_at == "validate":
@@ -77,12 +80,12 @@ class FakeDelivery:
     def commit_push(self, worktree, branch, message):
         self.calls.append(("push", branch))
         if self.fail_at == "push":
-            raise codex_dev_worker.DeliveryError("push failed")
+            raise codex_dev_worker.DeliveryError("push failed", stage="push")
 
     def create_draft_pr(self, *, repo, branch, issue_number):
         self.calls.append(("pr", repo, branch, issue_number))
         if self.fail_at == "pr":
-            raise codex_dev_worker.DeliveryError("pr failed")
+            raise codex_dev_worker.DeliveryError("pr failed", stage="pr_creation")
         return "https://github.example/draft/1"
 
     def push_existing(self, worktree, branch):
@@ -92,6 +95,8 @@ class FakeDelivery:
 
     def remove_worktree(self, worktree):
         self.calls.append("remove")
+        if self.fail_at == "cleanup":
+            raise codex_dev_worker.DeliveryError("cleanup failed", stage="cleanup")
         worktree.rmdir()
 
 
@@ -117,14 +122,15 @@ def test_delivery_success_commits_pushes_draft_pr_then_removes_worktree(tmp_path
     assert not (tmp_path / "worktrees" / "issue-10").exists()
 
 
-@pytest.mark.parametrize("failure", ["validate", "push", "pr"])
+@pytest.mark.parametrize("failure", ["validate", "push", "pr", "cleanup"])
 def test_delivery_failure_retains_worktree_and_failed_state(tmp_path, monkeypatch, failure):
     delivery = FakeDelivery(tmp_path, fail_at=failure)
     queue, worker, result = run_codex_worker(tmp_path, monkeypatch, delivery)
     assert result["execution"] == "failed"
     assert (queue.root / "failed" / "issue-10.json").exists()
     assert (tmp_path / "worktrees" / "issue-10").exists()
-    assert "remove" not in delivery.calls
+    if failure != "cleanup":
+        assert "remove" not in delivery.calls
 
 
 def test_failed_delivery_can_be_requeued_and_recovered_without_losing_worktree(tmp_path, monkeypatch):
@@ -151,5 +157,14 @@ def test_retry_delivery_reuses_retained_commit_without_rerunning_codex(tmp_path,
     delivery.fail_at = None
     result = worker.retry_delivery("issue-10")
     assert result["execution"] == "recovered"
-    assert "retry-push" in [x[0] for x in delivery.calls if isinstance(x, tuple)]
+    assert [x[0] for x in delivery.calls if isinstance(x, tuple)].count("push") == 1
     assert (queue.root / "completed" / "issue-10.json").exists()
+
+
+def test_retry_does_not_bypass_validation_failure(tmp_path, monkeypatch):
+    delivery = FakeDelivery(tmp_path, fail_at="validate")
+    queue, worker, _ = run_codex_worker(tmp_path, monkeypatch, delivery)
+    result = worker.retry_delivery("issue-10")
+    assert result["recovery"].startswith("not-retryable")
+    assert (queue.root / "failed" / "issue-10.json").exists()
+    assert "pr" not in [x[0] for x in delivery.calls if isinstance(x, tuple)]

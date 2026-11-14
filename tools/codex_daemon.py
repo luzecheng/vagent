@@ -132,6 +132,12 @@ class TaskQueue:
         path = self._path("failed", task_id)
         return self._read(path) if path.exists() else None
 
+    def failed_result(self, task_id: str) -> dict[str, Any] | None:
+        path = self._path("failed", task_id)
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8")).get("result")
+
     @staticmethod
     def _read(path: Path) -> Task:
         data = json.loads(path.read_text(encoding="utf-8"))
