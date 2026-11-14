@@ -60,6 +60,28 @@ def test_real_worktree_commit_push_and_remote_state(tmp_path):
     assert git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == "main"
 
 
+def test_rename_status_records_are_staged_without_losing_old_path(tmp_path):
+    repo, _ = repository(tmp_path)
+    delivery = GitDelivery(repo)
+    worktree = tmp_path / "worktree"
+    branch = "codex/issue-rename"
+    delivery.create_worktree(worktree, branch)
+    git(worktree, "mv", "README.md", "renamed.md")
+    assert set(delivery.changed_paths(worktree)) == {"README.md", "renamed.md"}
+    delivery.commit_push(worktree, branch, "rename test")
+    assert git(worktree, "show", "--format=", "--name-status", "HEAD").stdout.startswith("R")
+
+
+def test_remote_base_commit_is_not_classified_as_deliverable(tmp_path):
+    repo, _ = repository(tmp_path)
+    delivery = GitDelivery(repo)
+    worktree = tmp_path / "worktree"
+    branch = "codex/issue-no-change"
+    delivery.create_worktree(worktree, branch)
+    git(worktree, "push", "origin", f"HEAD:refs/heads/{branch}")
+    assert delivery.inspect_state(worktree, branch) == DeliveryState.NO_CHANGE
+
+
 def test_push_failure_preserves_commit_and_recovers_without_recommit(tmp_path):
     repo, _ = repository(tmp_path)
     failed = {"value": True}

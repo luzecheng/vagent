@@ -115,18 +115,26 @@ class TaskQueue:
 
     def requeue_failed(self, task_id: str) -> bool:
         """Make a failed task retryable without deleting its retained worktree."""
-        source = self._path("failed", task_id)
-        target = self._path("pending", task_id)
-        if not source.exists() or target.exists():
+        lock = self._lock(task_id)
+        try:
+            lock.mkdir()
+        except FileExistsError:
             return False
-        data = json.loads(source.read_text(encoding="utf-8"))
-        data.pop("result", None)
-        data["requeued_at"] = int(time.time())
-        temp = target.with_suffix(f".{os.getpid()}.tmp")
-        temp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
-        temp.replace(target)
-        source.unlink()
-        return True
+        try:
+            source = self._path("failed", task_id)
+            target = self._path("pending", task_id)
+            if not source.exists() or target.exists():
+                return False
+            data = json.loads(source.read_text(encoding="utf-8"))
+            data.pop("result", None)
+            data["requeued_at"] = int(time.time())
+            temp = target.with_suffix(f".{os.getpid()}.tmp")
+            temp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
+            temp.replace(target)
+            source.unlink()
+            return True
+        finally:
+            lock.rmdir()
 
     def failed_task(self, task_id: str) -> Task | None:
         path = self._path("failed", task_id)

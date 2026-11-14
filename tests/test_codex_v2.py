@@ -29,6 +29,18 @@ def test_queue_is_opt_in_owner_only_and_idempotent(tmp_path):
     assert queue.claim("one") is None
 
 
+def test_requeue_failed_honors_the_task_lock(tmp_path):
+    queue = TaskQueue(tmp_path / "queue", owner="alice", enabled=True)
+    assert queue.enqueue(task())
+    assert queue.claim("one") == task()
+    queue.finish("one", success=False, result={"delivery_stage": "push"})
+    lock = queue.root / "locks" / "one.lock"
+    lock.mkdir()
+    assert queue.requeue_failed("one") is False
+    lock.rmdir()
+    assert queue.requeue_failed("one") is True
+
+
 def test_queue_rejects_unknown_kind_and_escape_artifacts(tmp_path):
     queue = TaskQueue(tmp_path / "queue", owner="alice", enabled=True)
     with pytest.raises(QueueRejected):

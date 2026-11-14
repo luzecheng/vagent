@@ -71,10 +71,11 @@ class GitDelivery:
     """Allowlisted Git/GitHub delivery operations, injectable in tests."""
 
     def __init__(self, repo_root: Path, *, runner: Callable[..., Any] = subprocess.run,
-                 timeout_seconds: int = 300):
+                 timeout_seconds: int = 300, base_branch: str = BASE_BRANCH):
         self.repo_root = Path(repo_root)
         self.runner = runner
         self.timeout_seconds = timeout_seconds
+        self.base_branch = base_branch
 
     def _run(self, argv: list[str], *, cwd: Path | None = None, check: bool = True) -> Any:
         result = self.runner(argv, cwd=cwd or self.repo_root, check=False,
@@ -87,7 +88,7 @@ class GitDelivery:
     def create_worktree(self, worktree: Path, branch: str) -> None:
         self._assert_repository()
         self._assert_branch_name(branch)
-        self._run(["git", "worktree", "add", "-b", branch, str(worktree), BASE_BRANCH])
+        self._run(["git", "worktree", "add", "-b", branch, str(worktree), self.base_branch])
 
     def changed_paths(self, worktree: Path) -> tuple[str, ...]:
         return tuple(path for _, path in self._status_entries(worktree))
@@ -97,13 +98,16 @@ class GitDelivery:
         self._assert_boundaries(worktree, branch)
         if self.changed_paths(worktree):
             return DeliveryState.UNCOMMITTED
+        changed = self._run(["git", "diff", "--quiet", f"{self.base_branch}...HEAD"], cwd=worktree, check=False)
+        if changed.returncode == 0:
+            return DeliveryState.NO_CHANGE
         remote = self._run(["git", "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}"],
                            cwd=worktree, check=False)
         head = self._run(["git", "rev-parse", "HEAD"], cwd=worktree).stdout.strip()
         remote_sha = (remote.stdout or "").split()[0] if remote.returncode == 0 else ""
         if remote_sha == head:
             return DeliveryState.PUSHED_AWAITING_PR
-        ahead = self._run(["git", "rev-list", "--count", f"{BASE_BRANCH}..HEAD"], cwd=worktree).stdout.strip()
+        ahead = self._run(["git", "rev-list", "--count", f"{self.base_branch}..HEAD"], cwd=worktree).stdout.strip()
         return (DeliveryState.COMMITTED_UNPUSHED if int(ahead or "0") else DeliveryState.NO_CHANGE)
 
     def validate_tests(self, worktree: Path, timeout: float) -> Any:
@@ -123,10 +127,15 @@ class GitDelivery:
         unsafe = tuple(path for path in paths if SENSITIVE_PATH.search(path))
         if unsafe:
             raise DeliveryError("sensitive or local-only files are not deliverable", stage="staging")
-        for _, path in entries:
+        for status, path in entries:
+            # Porcelain -z emits both names for a rename. The old name is
+            # already represented by the rename index entry and may no longer
+            # exist as a pathspec; stage the surviving target path.
+            if status[0] in "RC" and not (worktree / path).exists():
+                continue
             self._run(["git", "add", "--", path], cwd=worktree)
-        staged = self._run(["git", "diff", "--cached", "--name-only"], cwd=worktree)
-        staged_paths = tuple(x for x in (staged.stdout or "").splitlines() if x)
+        staged = self._run(["git", "diff", "--cached", "--name-only", "-z"], cwd=worktree)
+        staged_paths = tuple(x for x in (staged.stdout or "").split("\0") if x)
         if not staged_paths:
             raise DeliveryError("validation produced no changes to deliver", stage="staging")
         content = self._run(["git", "diff", "--cached", "--binary"], cwd=worktree).stdout or ""
@@ -139,7 +148,7 @@ class GitDelivery:
     def push_existing(self, worktree: Path, branch: str) -> None:
         """Retry delivery of a commit that already exists in the retained worktree."""
         self._assert_boundaries(worktree, branch)
-        compared = self._run(["git", "diff", "--quiet", f"{BASE_BRANCH}...HEAD"], cwd=worktree, check=False)
+        compared = self._run(["git", "diff", "--quiet", f"{self.base_branch}...HEAD"], cwd=worktree, check=False)
         if compared.returncode == 0:
             raise DeliveryError("retained worktree has no committed change to deliver", stage="push")
         try:
@@ -152,7 +161,7 @@ class GitDelivery:
             raise DeliveryError("repository is outside the configured delivery boundary", stage="boundary")
         self._assert_branch_name(branch)
         existing = self._run(["gh", "pr", "list", "--repo", repo, "--state", "open",
-                              "--head", branch, "--base", BASE_BRANCH, "--json", "url,isDraft"])
+                              "--head", branch, "--base", self.base_branch, "--json", "url,isDraft"])
         try:
             prs = json.loads(existing.stdout or "[]")
         except json.JSONDecodeError as exc:
@@ -164,7 +173,7 @@ class GitDelivery:
             return str(pr["url"])
         result = self._run([
             "gh", "pr", "create", "--repo", repo, "--head", branch,
-            "--base", BASE_BRANCH, "--draft", "--title",
+            "--base", self.base_branch, "--draft", "--title",
             f"Issue #{issue_number}: Codex implementation", "--body",
             f"Automated implementation for explicitly approved issue #{issue_number}.\n\nHuman review required.",
         ])
@@ -181,7 +190,11 @@ class GitDelivery:
     def _status_entries(self, worktree: Path) -> list[tuple[str, str]]:
         result = self._run(["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd=worktree)
         entries = []
-        for record in (result.stdout or "").split("\0"):
+        records = (result.stdout or "").split("\0")
+        index = 0
+        while index < len(records):
+            record = records[index]
+            index += 1
             if not record:
                 continue
             if len(record) < 4:
@@ -193,6 +206,15 @@ class GitDelivery:
             if not resolved.is_relative_to(worktree.resolve()):
                 raise DeliveryError("change path escapes the worktree", stage="staging")
             entries.append((status, path))
+            if status[0] in "RC" or status[1] in "RC":
+                if index >= len(records) or not records[index]:
+                    raise DeliveryError("git returned an incomplete rename/copy record", stage="staging")
+                old_path = records[index]
+                index += 1
+                old_resolved = (worktree / old_path).resolve()
+                if not old_resolved.is_relative_to(worktree.resolve()):
+                    raise DeliveryError("rename/copy path escapes the worktree", stage="staging")
+                entries.append((status, old_path))
         return entries
 
     def _assert_repository(self) -> None:
@@ -210,7 +232,7 @@ class GitDelivery:
         current = self._run(["git", "symbolic-ref", "--short", "HEAD"], cwd=worktree).stdout.strip()
         if current != branch or current == BASE_BRANCH:
             raise DeliveryError("source/target branch boundary mismatch", stage="boundary")
-        self._run(["git", "rev-parse", "--verify", BASE_BRANCH], cwd=worktree)
+        self._run(["git", "rev-parse", "--verify", self.base_branch], cwd=worktree)
 
     @staticmethod
     def _assert_branch_name(branch: str) -> None:
