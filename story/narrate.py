@@ -50,6 +50,25 @@ def sentence_spans(text: str, lang: str = "zh") -> list[tuple[int, int]]:
     return spans
 
 
+def merge_short_spans(text: str, spans: list[tuple[int, int]], minimum: int = 12) -> list[tuple[int, int]]:
+    """CosyVoice needs enough context for very short Chinese utterances.
+
+    Keep the displayed script and character timings unchanged, but synthesize a
+    short sentence together with the following sentence so zero-shot inference
+    does not fail on a tiny phoneme sequence.
+    """
+    merged: list[tuple[int, int]] = []
+    index = 0
+    while index < len(spans):
+        start, end = spans[index]
+        if len(re.sub(r"\s+", "", text[start:end])) < minimum and index + 1 < len(spans):
+            end = spans[index + 1][1]
+            index += 1
+        merged.append((start, end))
+        index += 1
+    return merged
+
+
 def _pause(sentence: str, pauses: dict, paragraph: bool) -> float:
     if paragraph:
         return pauses["paragraph"]
@@ -138,6 +157,8 @@ def narrate(storyboard: dict, config: dict, log=print, draft: bool = False,
     cursor = LEAD_IN
     char_time = {}                          # character index in `full` -> time its sound starts
     spans = sentence_spans(full, lang)
+    if not draft and spec.get("provider") == "cosyvoice" and lang == "zh":
+        spans = merge_short_spans(full, spans)
     for n, (a, b) in enumerate(spans):
         text = full[a:b].strip()
         if draft:
