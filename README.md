@@ -123,6 +123,45 @@ git-ignored, for settings specific to this machine) → command-line flags.
 .venv/bin/python -m pytest -q tests
 ```
 
+### Optional GitHub-to-Codex development workflow
+
+The V2 workflow is disabled unless explicitly enabled. To opt in, an open issue
+must be authored by the configured owner, carry the `codex-dev` label, and
+contain `<!-- vagent-codex-dev-approved-v1 -->`. Polling only enqueues issue
+metadata; issue titles and bodies are never shell commands or queue commands.
+
+```bash
+PYTHONPATH=src .venv/bin/python -m tools.github_codex_workflow \
+  --enable --queue-root .local/codex-queue
+```
+
+The queue uses isolated worktrees and fixed, bounded commands. A development task
+is validated with the repository test command, committed to a dedicated
+`codex/issue-N` branch, pushed, and opened as a Draft PR. Push and PR failures
+retain the worktree for `retry_delivery`; nothing is merged, deployed, released,
+or published automatically. Review the local queue and run the worker deliberately;
+do not enable this workflow on an unattended checkout.
+
+### Optional PR review repair listener
+
+PR review intake is also disabled by default. On a Mac, install `gh`, authenticate
+with `gh auth login`, install the project test dependencies, and run a read-only
+poll first. Both `--enable` and `--execute` are explicit owner controls; omit
+`--execute` for dry-run polling. The configured PR, source branch, base branch,
+and reviewer identities must match exactly.
+
+```bash
+PYTHONPATH=src .venv/bin/python -m tools.github_codex_review \
+  --enable --repo luzecheng/vagent --pr 11 \
+  --head-branch agent/v2-issue-10 --base-branch agent/v2-issue-8 \
+  --reviewer luzecheng --state-path .local/review-state.json \
+  --worktree-root .local/review-worktrees --repo-root "$PWD"
+```
+
+Add `--execute` only after reviewing the dry-run result. Execution is bounded,
+uses an isolated worktree, validates tests, and updates only the existing Draft
+PR head with a lease-protected push. It never merges or deploys.
+
 ## License
 
 [MIT](LICENSE). The voice models (Kokoro, CosyVoice), Whisper and the fonts (Inter, Noto Sans CJK) are downloaded

@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any
 
-ALLOWED_TASK_KINDS = frozenset({"unit_tests"})
+ALLOWED_TASK_KINDS = frozenset({"unit_tests", "codex_development"})
 TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 
@@ -112,6 +112,39 @@ class TaskQueue:
         temp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
         temp.replace(target)
         source.unlink()
+
+    def requeue_failed(self, task_id: str) -> bool:
+        """Make a failed task retryable without deleting its retained worktree."""
+        lock = self._lock(task_id)
+        try:
+            lock.mkdir()
+        except FileExistsError:
+            return False
+        try:
+            source = self._path("failed", task_id)
+            target = self._path("pending", task_id)
+            if not source.exists() or target.exists():
+                return False
+            data = json.loads(source.read_text(encoding="utf-8"))
+            data.pop("result", None)
+            data["requeued_at"] = int(time.time())
+            temp = target.with_suffix(f".{os.getpid()}.tmp")
+            temp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
+            temp.replace(target)
+            source.unlink()
+            return True
+        finally:
+            lock.rmdir()
+
+    def failed_task(self, task_id: str) -> Task | None:
+        path = self._path("failed", task_id)
+        return self._read(path) if path.exists() else None
+
+    def failed_result(self, task_id: str) -> dict[str, Any] | None:
+        path = self._path("failed", task_id)
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8")).get("result")
 
     @staticmethod
     def _read(path: Path) -> Task:
