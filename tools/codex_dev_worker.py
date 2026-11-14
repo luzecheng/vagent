@@ -71,11 +71,13 @@ class GitDelivery:
     """Allowlisted Git/GitHub delivery operations, injectable in tests."""
 
     def __init__(self, repo_root: Path, *, runner: Callable[..., Any] = subprocess.run,
-                 timeout_seconds: int = 300, base_branch: str = BASE_BRANCH):
+                 timeout_seconds: int = 300, base_branch: str = BASE_BRANCH,
+                 allowed_target_branches: frozenset[str] = frozenset()):
         self.repo_root = Path(repo_root)
         self.runner = runner
         self.timeout_seconds = timeout_seconds
         self.base_branch = base_branch
+        self.allowed_target_branches = allowed_target_branches
 
     def _run(self, argv: list[str], *, cwd: Path | None = None, check: bool = True) -> Any:
         result = self.runner(argv, cwd=cwd or self.repo_root, check=False,
@@ -119,6 +121,10 @@ class GitDelivery:
         return result
 
     def commit_push(self, worktree: Path, branch: str, message: str) -> None:
+        self.commit_only(worktree, branch, message)
+        self.push_existing(worktree, branch)
+
+    def commit_only(self, worktree: Path, branch: str, message: str) -> None:
         self._assert_boundaries(worktree, branch)
         entries = self._status_entries(worktree)
         if not entries:
@@ -143,7 +149,20 @@ class GitDelivery:
             self._run(["git", "reset", "--", *staged_paths], cwd=worktree, check=False)
             raise DeliveryError("staged content resembles a credential", stage="staging")
         self._run(["git", "commit", "-m", message], cwd=worktree)
-        self.push_existing(worktree, branch)
+
+    def push_ref(self, worktree: Path, target_branch: str, expected_head: str) -> None:
+        """Push a detached review repair to one pre-authorized existing branch."""
+        self._assert_repository()
+        self._assert_branch_name(target_branch)
+        common_dir = self._run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                               cwd=worktree).stdout.strip()
+        if Path(common_dir).resolve() != (self.repo_root / ".git").resolve():
+            raise DeliveryError("worktree is outside the configured repository", stage="boundary")
+        current = self._run(["git", "symbolic-ref", "--short", "HEAD"], cwd=worktree, check=False)
+        if current.returncode != 0 or not expected_head:
+            raise DeliveryError("review worktree is not a valid isolated branch", stage="boundary")
+        self._run(["git", "push", f"--force-with-lease=refs/heads/{target_branch}:{expected_head}",
+                   "origin", f"HEAD:refs/heads/{target_branch}"], cwd=worktree)
 
     def push_existing(self, worktree: Path, branch: str) -> None:
         """Retry delivery of a commit that already exists in the retained worktree."""
@@ -234,9 +253,10 @@ class GitDelivery:
             raise DeliveryError("source/target branch boundary mismatch", stage="boundary")
         self._run(["git", "rev-parse", "--verify", self.base_branch], cwd=worktree)
 
-    @staticmethod
-    def _assert_branch_name(branch: str) -> None:
-        if not branch.startswith("codex/issue-") or branch == "codex/issue-":
+    def _assert_branch_name(self, branch: str) -> None:
+        if branch in self.allowed_target_branches:
+            return
+        if not branch.startswith("codex/") or branch == "codex/":
             raise DeliveryError("target branch is outside the Codex delivery boundary", stage="boundary")
 
 

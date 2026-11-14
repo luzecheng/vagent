@@ -142,6 +142,26 @@ retain the worktree for `retry_delivery`; nothing is merged, deployed, released,
 or published automatically. Review the local queue and run the worker deliberately;
 do not enable this workflow on an unattended checkout.
 
+### Optional PR review repair listener
+
+PR review intake is also disabled by default. On a Mac, install `gh`, authenticate
+with `gh auth login`, install the project test dependencies, and run a read-only
+poll first. Both `--enable` and `--execute` are explicit owner controls; omit
+`--execute` for dry-run polling. The configured PR, source branch, base branch,
+and reviewer identities must match exactly.
+
+```bash
+PYTHONPATH=src .venv/bin/python -m tools.github_codex_review \
+  --enable --repo luzecheng/vagent --pr 11 \
+  --head-branch agent/v2-issue-10 --base-branch agent/v2-issue-8 \
+  --reviewer luzecheng --state-path .local/review-state.json \
+  --worktree-root .local/review-worktrees --repo-root "$PWD"
+```
+
+Add `--execute` only after reviewing the dry-run result. Execution is bounded,
+uses an isolated worktree, validates tests, and updates only the existing Draft
+PR head with a lease-protected push. It never merges or deploys.
+
 ## License
 
 [MIT](LICENSE). The voice models (Kokoro, CosyVoice), Whisper and the fonts (Inter, Noto Sans CJK) are downloaded
